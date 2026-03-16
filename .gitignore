@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Lambda layer build artifacts
+deploy/lambda-layer/*.zip
+
+# Large result files (raw JSON with individual requests)
+results/*.json
+
+# Temporary files
+/tmp/
+*.tmp
+
+# Docker
+.docker/
+
+# AWS credentials (never commit)
+.aws/
