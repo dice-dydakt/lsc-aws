@@ -2,11 +2,11 @@
 
 ## Overview
 
-This lab measures the **cold-start latency** and **cost** of three AWS execution environments — Lambda, Fargate, and EC2 — running the same workload. By the end, you will have real data to answer:
+This lab measures the **latency** and **cost** of three AWS execution environments — Lambda, Fargate, and EC2 — running the same workload under different traffic patterns. By the end, you will have real data to answer:
 
-> **Given unpredictable, spiky traffic, which execution environment minimizes cost while keeping p99 latency below 500ms?**
+> **Given unpredictable, spiky traffic and a p99 < 500ms SLO, which execution environment would you recommend — and what changes (if any) would be needed to meet the SLO?**
 
-There is no single correct answer. Your recommendation must be supported by your measurements.
+There is no single correct answer, and the SLO may not be achievable with the default configuration of every environment. Your recommendation must be supported by your measurements.
 
 ---
 
@@ -156,6 +156,7 @@ Use your measured p50 handler duration from Scenario B for `duration_seconds` an
 3. A **Cost vs. RPS line chart** showing Lambda's linear cost against Fargate/EC2's flat cost, with the break-even point marked.
 4. **Recommendation** (1 page max):
    - Given the SLO (p99 < 500ms) and traffic model, which environment do you recommend?
+   - Does your recommended environment meet the SLO as deployed? If not, what changes would be needed (e.g., Lambda provisioned concurrency, more Fargate tasks, auto-scaling)?
    - Justify with specific numbers from your measurements.
    - State the conditions under which your recommendation would change (e.g., "if average load exceeds X RPS..." or "if the SLO were relaxed to Y ms...").
 
