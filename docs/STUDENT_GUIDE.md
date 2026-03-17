@@ -1,4 +1,4 @@
-# Lab 3 — Student Guide: Cold Path Latency
+# AWS Cloud Lab — Student Guide
 
 ## Overview
 

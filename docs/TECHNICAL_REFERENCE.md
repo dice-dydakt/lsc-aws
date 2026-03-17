@@ -1,4 +1,4 @@
-# Lab 3 — Technical Reference
+# AWS Cloud Lab — Technical Reference
 
 This document explains the concepts, implementation details, and AWS services involved in the lab. Each section links to the relevant AWS documentation for further reading.
 

@@ -1,4 +1,4 @@
-# Lab 3 — User Manual
+# AWS Cloud Lab — User Manual
 
 This manual walks you through deploying, testing, and cleaning up all lab resources step by step.
 
