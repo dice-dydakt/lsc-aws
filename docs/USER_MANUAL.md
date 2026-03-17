@@ -206,10 +206,13 @@ bash deploy/02-lambda-zip.sh
 ```bash
 # Test via CLI invoke (bypasses Function URL auth):
 aws lambda invoke --function-name lsc-knn-zip \
-    --payload '{"body": "{\"query\": [0.1, 0.2, 0.3]}"}' /tmp/out.json
+    --cli-binary-format raw-in-base64-out \
+    --payload "$(python3 -c 'import json; q=json.load(open("loadtest/query.json")); print(json.dumps({"body": json.dumps(q)}))')" \
+    /tmp/out.json
 cat /tmp/out.json
-
 ```
+
+> **Note:** The `--cli-binary-format raw-in-base64-out` flag is required for AWS CLI v2, which defaults to base64-encoded payloads. The query must be 128-dimensional to match the dataset.
 
 > **Note:** Lambda Function URLs use IAM auth, so plain `curl` will return `403 Forbidden`. The scenario scripts use `oha` with SigV4 signing to handle this automatically.
 
@@ -226,7 +229,9 @@ Same as Step 3 but uses the ECR container image instead of a zip package. Save t
 **Verify:**
 ```bash
 aws lambda invoke --function-name lsc-knn-container \
-    --payload '{"body": "{\"query\": [0.1, 0.2, 0.3]}"}' /tmp/out.json
+    --cli-binary-format raw-in-base64-out \
+    --payload "$(python3 -c 'import json; q=json.load(open("loadtest/query.json")); print(json.dumps({"body": json.dumps(q)}))')" \
+    /tmp/out.json
 cat /tmp/out.json
 ```
 

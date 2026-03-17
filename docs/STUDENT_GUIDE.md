@@ -25,23 +25,11 @@ After completing this lab you should be able to:
 
 All three environments run **identical application logic**: a brute-force k-nearest-neighbor (k-NN) search over 50,000 vectors of dimension 128. The workload is deliberately compute-heavy at initialization (building the dataset) and lightweight per request (~23–65ms).
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│  Target A: AWS Lambda (Function URL)                        │
-│    • Zip deployment (Python 3.12 + NumPy layer)            │
-│    • Container image deployment (ECR)                      │
-│                                                             │
-│  Target B: ECS Fargate (behind ALB)                         │
-│    • 0.5 vCPU / 1 GB, same Docker image                   │
-│    • 1 task, no auto-scaling                               │
-│                                                             │
-│  Target C: EC2 t3.small (direct HTTP)                       │
-│    • Docker container, same image                          │
-│    • Always warm                                           │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
+| Target | Environment | Details |
+|--------|-------------|---------|
+| **A** | **AWS Lambda** (Function URL) | Zip deployment (Python 3.12 + NumPy layer) and container image deployment (ECR) |
+| **B** | **ECS Fargate** (behind ALB) | 0.5 vCPU / 1 GB, same Docker image, 1 task, no auto-scaling |
+| **C** | **EC2 t3.small** (direct HTTP) | Docker container, same image, always warm |
 
 ---
 
@@ -51,7 +39,7 @@ All three environments run **identical application logic**: a brute-force k-near
 
 Deploy the four targets (Lambda zip, Lambda container, Fargate, EC2) following the User Manual (`docs/USER_MANUAL.md`). Verify that all endpoints return identical k-NN results for the same query vector.
 
-**Deliverable:** Screenshot or terminal output showing successful responses from all four endpoints with matching `results` arrays.
+**Deliverable:** Save the terminal output showing successful responses from all four endpoints with matching `results` arrays to `results/assignment-1-endpoints.txt`.
 
 ---
 
@@ -84,7 +72,7 @@ Deploy the four targets (Lambda zip, Lambda container, Fargate, EC2) following t
 1. Warm up all endpoints with 20 requests each.
 2. For each target, run 500 requests at concurrency=10. Record p50, p95, p99.
 3. Repeat at concurrency=50.
-4. Record server-side `query_time_ms` from the response body.
+4. Record server-side `query_time_ms` from the response body. You can sample this with a few `curl` calls to each endpoint, or extract it from CloudWatch application logs.
 
 **What to record:** A table like this:
 
@@ -135,6 +123,8 @@ Deploy the four targets (Lambda zip, Lambda container, Fargate, EC2) following t
 - Fargate: https://aws.amazon.com/fargate/pricing/
 - EC2: https://aws.amazon.com/ec2/pricing/on-demand/
 
+Take screenshots of the relevant pricing sections (with the date visible) and save them to `results/figures/pricing-screenshots/`.
+
 **Analysis:**
 - Compute monthly idle cost assuming 18 hours/day idle, 6 hours/day active.
 - State which environment has zero idle cost and explain why.
@@ -171,55 +161,53 @@ Use your measured p50 handler duration from Scenario B for `duration_seconds` an
 
 ---
 
-### Assignment 7: Reflection
-
-Write half a page answering:
-
-1. What did you not measure that would improve the analysis?
-2. What assumption in the cost model is most likely to be wrong?
-3. Where does Kubernetes fit in this comparison? What would you need to measure to place it there?
-
----
-
 ## Grading Rubric
 
 | Component | Points | Notes |
 |---|---|---|
-| Setup correctness (Assignment 1) | 10 | All four environments deployed, functional, same workload |
-| Scenario A data + decomposition (Assignment 2) | 20 | Cold starts observed and quantified; zip vs container compared |
-| Scenario B latency table (Assignment 3) | 15 | All four environments, both concurrency levels |
-| Scenario C burst data (Assignment 4) | 15 | Bimodal distribution identified, SLO assessment |
-| Cost model + break-even (Assignments 5–6) | 20 | Correct formula application; break-even derived algebraically |
-| Recommendation quality (Assignment 6) | 15 | Quantitatively supported, conditions for reversal stated |
-| Raw data submitted | 5 | Reproducibility check |
-| **Total** | **100** | |
+| Setup correctness (Assignment 1) | 1 | All four environments deployed, functional, same workload |
+| Scenario A data + decomposition (Assignment 2) | 2 | Cold starts observed and quantified; zip vs container compared |
+| Scenario B latency table (Assignment 3) | 1.5 | All four environments, both concurrency levels |
+| Scenario C burst data (Assignment 4) | 1.5 | Bimodal distribution identified, SLO assessment |
+| Cost model + break-even (Assignments 5–6) | 2 | Correct formula application; break-even derived algebraically |
+| Recommendation quality (Assignment 6) | 1.5 | Quantitatively supported, conditions for reversal stated |
+| Raw data submitted | 0.5 | Reproducibility check |
+| **Total** | **10** | |
 
-**Important:** A recommendation unsupported by specific numbers scores at most 5/15. A recommendation that contradicts your own data with no explanation scores 0/15.
+**Important:** A recommendation unsupported by specific numbers scores at most 0.5/1.5. A recommendation that contradicts your own data with no explanation scores 0/1.5.
 
 ---
 
 ## Submission Format
 
-Submit a single **PDF or ZIP** containing:
+Submit via your **GitHub Classroom repository** (created from this template). Your repository should contain:
 
-1. **Raw data** — `oha` output files, CloudWatch REPORT line exports, AWS pricing screenshots with dates.
-2. **Figures** — Latency decomposition bar chart, latency table, cost vs. RPS chart.
-3. **Report** — Max 4 pages (excluding figures and raw data) covering all assignments.
+```
+results/
+├── assignment-1-endpoints.txt      # Terminal output verifying all 4 endpoints (Assignment 1)
+├── scenario-a-zip.txt              # oha output from Scenario A (zip)
+├── scenario-a-container.txt        # oha output from Scenario A (container)
+├── scenario-b-*.txt                # oha output from Scenario B (all targets, both concurrencies)
+├── scenario-c-*.txt                # oha output from Scenario C (all targets)
+├── cloudwatch-zip-reports.txt      # CloudWatch REPORT lines for Lambda zip
+├── cloudwatch-container-reports.txt # CloudWatch REPORT lines for Lambda container
+└── figures/                        # Generated charts and screenshots
+    ├── latency-decomposition.*     # Stacked bar chart (Assignment 2)
+    ├── cost-vs-rps.*               # Cost vs. RPS line chart (Assignment 6)
+    └── pricing-screenshots/        # AWS pricing page screenshots with dates
+results/report.md                   # Report (max 4 pages equivalent) covering all assignments
+```
 
----
-
-## Time Estimate
-
-- Deployment: 1–1.5 hours
-- Running scenarios: 1–1.5 hours (including 20-minute idle waits)
-- Analysis and report: 1–1.5 hours
-- **Total: 3–4 hours** (excluding report writing)
+**Notes:**
+- The report can be Markdown (`report.md`) or PDF (`report.pdf`).
+- Figures can be embedded in the report or placed in `results/figures/`.
+- Do **not** commit AWS credentials, `.aws/`, or `loadtest/endpoints.sh` (it contains your endpoint URLs which expire).
 
 ---
 
 ## Important Reminders
 
-1. **Terminate all resources when done!** Run `deploy/99-cleanup.sh`. A forgotten t3.small costs ~$3.50/week.
+1. **Clean up when done.** Run `deploy/99-cleanup.sh` as good practice. In AWS Academy, resources are automatically terminated when your session expires, so a forgotten instance won't cost you credits.
 2. **AWS Academy sessions expire after ~4 hours.** Note resource IDs and endpoint URLs before the session expires.
 3. **Do not use API Gateway** in front of Lambda — it adds 5–15ms overhead and invalidates the comparison.
 4. **Document your region.** All resources should be in `us-east-1` unless your Academy account restricts this.
