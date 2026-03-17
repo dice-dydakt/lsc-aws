@@ -147,8 +147,8 @@ Open `deploy/00-config.sh` and verify:
 
 ```bash
 export AWS_REGION=us-east-1
-export ACCOUNT_ID=<your-account-id>        # ← UPDATE THIS
-export LAB_ROLE_ARN="arn:aws:iam::<your-account-id>:role/LabRole"
+export ACCOUNT_ID=YOUR_ACCOUNT_ID           # ← UPDATE THIS
+export LAB_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/LabRole"
 ```
 
 Find your account ID:
