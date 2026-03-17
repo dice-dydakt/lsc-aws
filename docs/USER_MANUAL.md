@@ -132,9 +132,9 @@ lsc_aws/
 │   ├── generate_query.py   # Generate fixed query vector
 │   ├── query.json      # Pre-generated query payload
 │   ├── lambda_loadtest.py  # Python load tester (for IAM-auth Lambda)
-│   ├── scenario-a.sh   # Cold start test
-│   ├── scenario-b.sh   # Warm throughput test
-│   └── scenario-c.sh   # Burst test
+│   ├── scenario-a.sh   # Scenario A: Cold start characterization
+│   ├── scenario-b.sh   # Scenario B: Warm steady-state throughput
+│   └── scenario-c.sh   # Scenario C: Burst from zero
 ├── results/            # Output directory for test results
 └── docs/               # This documentation
 ```
@@ -392,7 +392,7 @@ bash loadtest/scenario-b.sh "$LAMBDA_ZIP_URL" "$LAMBDA_CONTAINER_URL" "$FARGATE_
 
 The script warms up all targets, then runs 500 requests at concurrency 10 and 50 for each. Results are saved to `results/scenario-b-*.txt`.
 
-### Scenario C — Burst from Zero (requires 20-min idle)
+### Scenario C — Burst from Zero (requires 20-min Lambda idle)
 
 ```bash
 # Ensure Lambda has been idle 20+ minutes

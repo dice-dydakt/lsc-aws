@@ -277,7 +277,7 @@ Fargate tasks use `awsvpc` networking — each task gets its own ENI (Elastic Ne
 | **Idle cost** | $0 | Continuous (per-second billing) |
 | **Max scale** | 1000 concurrent (default) | Service desired count limit |
 
-In this lab, the single Fargate task handles all requests sequentially (Flask dev server is single-threaded). At concurrency=50, queuing becomes the dominant latency factor — not compute.
+In this lab, a single Fargate task handles all requests. Although Flask's dev server is multi-threaded by default (since Flask 1.0), concurrency is still limited by the GIL and available CPU — see [Section 8.5](#85-flask-development-server-threading-and-queuing) for details. At concurrency=50, queuing and CPU contention become the dominant latency factors — not per-request compute.
 
 ---
 
@@ -304,7 +304,7 @@ The EC2 instance runs the same Docker image as Fargate, with `MODE=server`. It p
 | Baseline CPU | 20% (burstable) |
 | On-demand price | $0.023/hr (us-east-1) |
 
-The `t3` family uses **CPU credits** for burstable performance. The baseline is 20% of 2 vCPUs. During the k-NN computation (~23ms per request), a single request uses well under the baseline, so credit consumption is minimal. Under burst (c=50), multiple requests queue on the single-threaded Flask server, but CPU usage per request remains constant.
+The `t3` family uses **CPU credits** for burstable performance. The baseline is 20% of 2 vCPUs. During the k-NN computation (~23ms per request), a single request uses well under the baseline, so credit consumption is minimal. Under burst (c=50), concurrent requests contend for the GIL and CPU, but per-request CPU usage remains constant.
 
 **AWS Documentation:**
 - [EC2 instance types](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-types.html)
@@ -536,7 +536,48 @@ The most complex deployment script. Notable implementation details:
 - **Health check:** The task definition includes a container health check (`curl http://localhost:8080/health`), and the ALB target group has its own health check on `/health`. Both must pass before the task receives traffic.
 - **`assignPublicIp: ENABLED`:** Required in the default VPC (no NAT gateway). Without it, the task cannot pull the container image from ECR or send logs to CloudWatch.
 
-### 8.5 File: `loadtest/oha-helpers.sh`
+### 8.5 Flask Development Server, Threading, and Queuing
+
+Fargate and EC2 run `app.run(host="0.0.0.0", port=8080)` — Flask's built-in Werkzeug development server. Since Flask 1.0, this server defaults to `threaded=True`, meaning it spawns a new thread for each incoming request rather than handling requests one at a time.
+
+However, threading in Python does not automatically mean parallel execution. Python's **Global Interpreter Lock (GIL)** ensures that only one thread can execute Python bytecode at any given time. So even with multiple threads, the Python portions of request handling (JSON parsing, Flask routing, response building) are serialized.
+
+#### Where NumPy changes the picture
+
+The k-NN computation in this lab is almost entirely inside NumPy:
+
+```python
+dists = np.linalg.norm(DATASET - query, axis=1)
+```
+
+NumPy is written in C and **releases the GIL** before entering its native code for many operations (element-wise arithmetic, reductions, etc.). During the ~23ms of matrix computation, the GIL is not held, and another thread is free to execute Python code. When the C code finishes, it reacquires the GIL to return the result.
+
+This means two concurrent requests can overlap like this:
+
+```
+Thread 1:  [parse JSON ~1ms] [--- NumPy (GIL released, ~23ms) ---] [response ~1ms]
+Thread 2:  (waiting for GIL) [parse JSON] [--- NumPy (GIL released, ~23ms) ------] [response ~1ms]
+```
+
+Thread 2 cannot parse JSON until Thread 1 releases the GIL by entering NumPy's C code. Once both threads are inside NumPy, their C code can run in parallel on separate CPU cores. The Python portions still serialize on the GIL, but they are fast (~1-2ms) relative to the ~23ms computation, so the wait is short.
+
+The practical limit is CPU cores:
+- **Fargate (0.5 vCPU):** Only one core available, so two NumPy calls compete for it. You get concurrency (no queuing) but not parallelism (no speedup per request).
+- **EC2 t3.small (2 vCPUs):** Two threads can genuinely compute in parallel on separate cores.
+
+#### What a single-threaded server would look like
+
+If the server were running with `threaded=False` (or equivalently, using a WSGI server like gunicorn with a single worker process), requests would be handled strictly one at a time. Every concurrent request would sit in a TCP accept queue waiting its turn. At concurrency=50 with ~23ms per request, the last request in the queue would wait ~50 × 23ms = 1150ms in the worst case.
+
+In contrast, Lambda avoids this entirely — each invocation gets its own execution environment, so there is no shared queue regardless of concurrency.
+
+#### Production considerations
+
+In production, you would use a WSGI server like `gunicorn` with multiple worker processes. Each worker is a separate process with its own GIL, providing both concurrency and parallelism up to the CPU limit. For example, `gunicorn -w 4` on a 2-vCPU instance gives 4 independent processes that can handle requests truly in parallel.
+
+When analyzing your results, consider what server configuration is in use and how it affects tail latency. The queuing behavior (or lack thereof) is a property of the server configuration, not of the Fargate/EC2 platform itself. Your analysis should distinguish between platform-level differences and server-level bottlenecks.
+
+### 8.7 File: `loadtest/oha-helpers.sh`
 
 Shared helper script sourced by all scenario scripts. Provides two wrapper functions:
 
@@ -545,7 +586,7 @@ Shared helper script sourced by all scenario scripts. Provides two wrapper funct
 
 The helper auto-detects the `oha` binary (checks `PATH`, then `~/oha`) and loads AWS credentials from `~/.aws/credentials` or environment variables.
 
-### 8.6 File: `loadtest/lambda_loadtest.py`
+### 8.8 File: `loadtest/lambda_loadtest.py`
 
 An alternative Python-based load tester that handles AWS SigV4 request signing using `botocore.auth.SigV4Auth`. Useful when `oha` is not available or when you need JSON output with per-request details (cold start detection, server-side timing).
 

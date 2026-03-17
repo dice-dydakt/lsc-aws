@@ -29,6 +29,8 @@ export AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-$(aws configure get aws_session_t
 AWS_REGION="${AWS_REGION:-us-east-1}"
 
 # oha with SigV4 signing for Lambda
+# Note: credentials are passed via CLI args and will be visible in `ps` output.
+# This is acceptable for short-lived Academy session tokens on a single-user instance.
 # Usage: oha_lambda <oha-args...> <url>
 oha_lambda() {
     "$OHA" -m POST -H "Content-Type: application/json" \

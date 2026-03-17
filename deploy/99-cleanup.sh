@@ -114,12 +114,13 @@ done
 echo "Deleting log groups..."
 aws logs delete-log-group --log-group-name "/ecs/${ECS_TASK_FAMILY}" --region "$AWS_REGION" 2>/dev/null || true
 
-# --- Delete instance profile if we created it ---
-echo "Cleaning up instance profile..."
-aws iam remove-role-from-instance-profile \
-    --instance-profile-name LabInstanceProfile \
-    --role-name LabRole 2>/dev/null || true
-aws iam delete-instance-profile \
-    --instance-profile-name LabInstanceProfile 2>/dev/null || true
+# --- Optionally delete instance profile ---
+# Skipped by default: LabInstanceProfile may be used by the EC2 workstation.
+# Uncomment if you want to remove it:
+# aws iam remove-role-from-instance-profile \
+#     --instance-profile-name LabInstanceProfile \
+#     --role-name LabRole 2>/dev/null || true
+# aws iam delete-instance-profile \
+#     --instance-profile-name LabInstanceProfile 2>/dev/null || true
 
 echo "=== Cleanup complete ==="
