@@ -35,11 +35,11 @@ If you don't have Docker on your laptop (or want in-region measurements with low
 bash deploy/06-workstation.sh
 ```
 
-This launches a **t3.small** (2 vCPU, 2 GB) with 20 GB storage, creates an SSH key pair, and installs Docker, git, pip, jq, and oha via user-data. It also clones the lab repo into `/home/ec2-user/lsc-aws`. Wait ~2 minutes after launch, then SSH in:
+This launches a **t3.small** (2 vCPU, 2 GB) with 20 GB storage, creates an SSH key pair, and installs Docker, git, pip, jq, and oha via user-data. It automatically detects the git remote URL of the repository you're running the script from and clones that same repo on the workstation — so if you run it from your GitHub Classroom fork, the workstation gets your fork. Wait ~2 minutes after launch, then SSH in:
 
 ```bash
 ssh -i deploy/lsc-knn-key.pem ec2-user@<WORKSTATION_IP>
-cd lsc-aws
+cd <your-repo-name>
 ```
 
 If a **LabInstanceProfile** exists, it is attached automatically — no credential files needed. Verify with:
@@ -49,7 +49,7 @@ aws sts get-caller-identity
 
 > **Benefit:** Running from an EC2 instance in `us-east-1` eliminates internet latency from your measurements. All traffic stays within the AWS region, giving you cleaner, more accurate results. The workstation also serves as the load generator — no separate instance needed.
 
-> **Cost:** A t3.small costs ~$0.023/hour. Remember to **stop or terminate** it when you're done.
+> **Cost:** A t3.small costs ~$0.0208/hour. Remember to **stop or terminate** it when you're done.
 
 From here, follow all remaining steps (Step 1 onward) exactly as written — everything works the same.
 

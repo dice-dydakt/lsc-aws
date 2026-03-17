@@ -97,7 +97,7 @@ top5_idx = top5_idx[np.argsort(dists[top5_idx])]   # Sort the top-5 by distance
 ```
 
 This workload was chosen because:
-- **Significant initialization cost:** Generating 50,000 × 128 float32 vectors (~24MB) takes 300–600ms, making Lambda's Init Duration clearly visible.
+- **Significant initialization cost:** Lambda's Init Duration of 300–600ms (Python startup + numpy import + dataset generation of 50,000 × 128 float32 vectors, ~24MB) is clearly visible in CloudWatch REPORT lines.
 - **Tunable compute cost:** The k-NN search takes ~23ms per request — enough to measure, not so much that it dominates all other latency components.
 - **No external dependencies:** Pure NumPy computation with no database or network calls, eliminating confounding variables.
 - **Real-world relevance:** Similar to embedding lookup, recommendation engines, and anomaly detection services.
@@ -216,7 +216,7 @@ AWS X-Ray captures per-invocation trace data, including Init Duration as a separ
 The CloudWatch `REPORT` log line for each invocation includes:
 ```
 REPORT RequestId: abc123
-    Duration: 77.00 ms          ← Handler execution time
+    Duration: 77.40 ms          ← Handler execution time
     Billed Duration: 78 ms      ← Rounded up to nearest 1ms
     Memory Size: 512 MB         ← Configured memory
     Max Memory Used: 144 MB     ← Actual peak usage
@@ -302,7 +302,7 @@ The EC2 instance runs the same Docker image as Fargate, with `MODE=server`. It p
 | Memory | 2 GB |
 | Network | Up to 5 Gbps |
 | Baseline CPU | 20% (burstable) |
-| On-demand price | $0.023/hr (us-east-1) |
+| On-demand price | $0.0208/hr (us-east-1) |
 
 The `t3` family uses **CPU credits** for burstable performance. The baseline is 20% of 2 vCPUs. During the k-NN computation (~23ms per request), a single request uses well under the baseline, so credit consumption is minimal. Under burst (c=50), concurrent requests contend for the GIL and CPU, but per-request CPU usage remains constant.
 
@@ -317,7 +317,7 @@ The EC2 instance uses a **user-data script** — a shell script that runs automa
 
 ```bash
 #!/bin/bash
-yum install -y docker
+dnf install -y docker
 systemctl enable docker && systemctl start docker
 aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <ECR_URI>
 docker pull <ECR_URI>:latest
@@ -382,7 +382,7 @@ The **response time distribution** is the most important output. Focus on p50, p
 ### 6.4 Statistical Validity
 
 - **Sample size:** 500 requests per measurement provides reliable p95/p99 estimates.
-- **Warm-up:** 20 requests before measurement ensures Lambda environments are warm and OS page caches are populated.
+- **Warm-up:** 60 requests at c=50 before measurement ensures enough Lambda environments are warm for the highest concurrency test and OS page caches are populated.
 - **Reproducibility:** Fixed query vector (seed=42) and deterministic dataset (seed=0) ensure identical computation across all environments.
 
 ---
@@ -408,7 +408,7 @@ Example: 1M requests, 77ms each, 512MB memory
   Total:         $0.84/month
 ```
 
-**Free tier:** 1M requests and 400,000 GB-seconds per month (first 12 months).
+**Free tier:** 1M requests and 400,000 GB-seconds per month (Always Free — does not expire after 12 months, unlike EC2).
 
 **Provisioned Concurrency:** $0.0000097315 per GB-second, billed continuously for all provisioned environments regardless of invocations.
 
@@ -440,15 +440,15 @@ This is charged regardless of traffic — idle tasks cost the same as busy ones.
 
 ### 7.3 EC2 Pricing
 
-EC2 on-demand pricing for t3.small in us-east-1: **$0.023/hour**.
+EC2 on-demand pricing for t3.small in us-east-1: **$0.0208/hour**.
 
 ```
-Monthly cost: $0.023 × 24 × 30 = $16.56
+Monthly cost: $0.0208 × 24 × 30 = $14.98
 ```
 
 Alternatives:
-- **Reserved Instance (1yr, no upfront):** ~$0.014/hr → $10.08/month (39% savings)
-- **Spot Instance:** ~$0.007/hr → $5.04/month (70% savings, but can be interrupted)
+- **Reserved Instance (1yr, no upfront):** ~$0.013/hr → $9.36/month (~38% savings)
+- **Spot Instance:** ~$0.006/hr → $4.32/month (~71% savings, but can be interrupted)
 - **Savings Plans:** Similar to RI, more flexible
 
 **AWS Documentation:**
@@ -479,12 +479,12 @@ Solving for R:
     R = Fixed cost / (S × (C_req + C_compute))
 ```
 
-With D=0.077s, M=0.5GB, Fixed=$16.56 (EC2):
+With D=0.077s, M=0.5GB, Fixed=$14.98 (EC2):
 ```
-R = $16.56 / (2,592,000 × ($0.0000002 + 0.077 × 0.5 × $0.0000166667))
-R = $16.56 / (2,592,000 × $0.000000842)
-R = $16.56 / $2.182
-R ≈ 7.6 RPS
+R = $14.98 / (2,592,000 × ($0.0000002 + 0.077 × 0.5 × $0.0000166667))
+R = $14.98 / (2,592,000 × $0.000000842)
+R = $14.98 / $2.182
+R ≈ 6.9 RPS
 ```
 
 ---
@@ -519,6 +519,7 @@ COPY requirements.txt ${LAMBDA_TASK_ROOT}/
 RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
 COPY app.py handler.py generate_dataset.py ${LAMBDA_TASK_ROOT}/
 COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["handler.lambda_handler"]
 ```
@@ -577,7 +578,7 @@ In production, you would use a WSGI server like `gunicorn` with multiple worker 
 
 When analyzing your results, consider what server configuration is in use and how it affects tail latency. The queuing behavior (or lack thereof) is a property of the server configuration, not of the Fargate/EC2 platform itself. Your analysis should distinguish between platform-level differences and server-level bottlenecks.
 
-### 8.7 File: `loadtest/oha-helpers.sh`
+### 8.6 File: `loadtest/oha-helpers.sh`
 
 Shared helper script sourced by all scenario scripts. Provides two wrapper functions:
 
@@ -586,7 +587,7 @@ Shared helper script sourced by all scenario scripts. Provides two wrapper funct
 
 The helper auto-detects the `oha` binary (checks `PATH`, then `~/oha`) and loads AWS credentials from `~/.aws/credentials` or environment variables.
 
-### 8.8 File: `loadtest/lambda_loadtest.py`
+### 8.7 File: `loadtest/lambda_loadtest.py`
 
 An alternative Python-based load tester that handles AWS SigV4 request signing using `botocore.auth.SigV4Auth`. Useful when `oha` is not available or when you need JSON output with per-request details (cold start detection, server-side timing).
 

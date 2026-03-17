@@ -18,15 +18,15 @@ source "$(dirname "$0")/oha-helpers.sh"
 echo "=== Scenario B: Warm Steady-State Throughput ==="
 
 # --- Warm-up phase ---
-echo "--- Warm-up phase (20 requests each) ---"
+echo "--- Warm-up phase (60 requests at c=50 each) ---"
 echo "  Warming up Lambda Zip..."
-oha_lambda -n 20 -c 5 "${LAMBDA_ZIP_URL}/search" > /dev/null 2>&1
+oha_lambda -n 60 -c 50 "${LAMBDA_ZIP_URL}/search" > /dev/null 2>&1
 echo "  Warming up Lambda Container..."
-oha_lambda -n 20 -c 5 "${LAMBDA_CONTAINER_URL}/search" > /dev/null 2>&1
+oha_lambda -n 60 -c 50 "${LAMBDA_CONTAINER_URL}/search" > /dev/null 2>&1
 echo "  Warming up Fargate..."
-oha_http -n 20 -c 5 "${FARGATE_URL}/search" > /dev/null 2>&1
+oha_http -n 60 -c 50 "${FARGATE_URL}/search" > /dev/null 2>&1
 echo "  Warming up EC2..."
-oha_http -n 20 -c 5 "${EC2_URL}/search" > /dev/null 2>&1
+oha_http -n 60 -c 50 "${EC2_URL}/search" > /dev/null 2>&1
 echo "Warm-up complete."
 echo ""
 

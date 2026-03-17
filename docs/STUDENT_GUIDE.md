@@ -69,7 +69,7 @@ Deploy the four targets (Lambda zip, Lambda container, Fargate, EC2) following t
 **Goal:** Measure per-request latency at sustained load across all four environments.
 
 **What to do:**
-1. Warm up all endpoints with 20 requests each.
+1. Warm up all endpoints (the scenario script sends 60 requests at c=50 to provision enough Lambda environments for the highest concurrency test).
 2. For each target, run 500 requests at concurrency=10. Record p50, p95, p99.
 3. Repeat at concurrency=50.
 4. Record server-side `query_time_ms` from the response body. For Fargate/EC2, sample with `curl`; for Lambda (IAM-auth), use `aws lambda invoke` or extract from CloudWatch application logs.

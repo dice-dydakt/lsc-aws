@@ -47,8 +47,13 @@ AMI_ID=$(aws ec2 describe-images \
     --query 'sort_by(Images, &CreationDate)[-1].ImageId' \
     --output text --region "$AWS_REGION")
 
+# --- Detect repo URL from the current clone ---
+REPO_URL=$(git -C "$(dirname "$0")" remote get-url origin 2>/dev/null || echo "https://github.com/dice-dydakt/lsc-aws.git")
+REPO_DIR=$(basename "$REPO_URL" .git)
+echo "Repo to clone on workstation: ${REPO_URL}"
+
 # --- User data ---
-USER_DATA=$(cat <<'USERDATA'
+USER_DATA=$(cat <<USERDATA
 #!/bin/bash
 dnf install -y docker git python3-pip jq
 systemctl start docker
@@ -59,8 +64,8 @@ usermod -aG docker ec2-user
 curl -sL https://github.com/hatoo/oha/releases/latest/download/oha-linux-amd64 -o /usr/local/bin/oha
 chmod +x /usr/local/bin/oha
 
-# Clone lab repo
-su - ec2-user -c 'git clone https://github.com/dice-dydakt/lsc-aws.git'
+# Clone the student's lab repo (detected from the machine running this script)
+su - ec2-user -c 'git clone ${REPO_URL}'
 USERDATA
 )
 
@@ -112,4 +117,4 @@ echo "=== Workstation ready. Public IP: ${PUBLIC_IP} ==="
 echo "SSH: ssh -i ${KEY_FILE} ec2-user@${PUBLIC_IP}"
 echo "NOTE: Wait ~2 minutes for user-data to complete, then:"
 echo "  ssh -i ${KEY_FILE} ec2-user@${PUBLIC_IP}"
-echo "  cd lsc-aws && oha --version && docker --version"
+echo "  cd ${REPO_DIR} && oha --version && docker --version"

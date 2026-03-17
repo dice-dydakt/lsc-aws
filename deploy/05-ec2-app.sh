@@ -62,7 +62,7 @@ echo "Instance Profile: ${INSTANCE_PROFILE_NAME}"
 # --- User data script ---
 USER_DATA=$(cat <<'USERDATA'
 #!/bin/bash
-yum install -y docker
+dnf install -y docker
 systemctl enable docker && systemctl start docker
 USERDATA
 )
