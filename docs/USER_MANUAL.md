@@ -134,7 +134,7 @@ lsc_aws/
 │   ├── lambda_loadtest.py  # Python load tester (for IAM-auth Lambda)
 │   ├── scenario-a.sh   # Cold start test
 │   ├── scenario-b.sh   # Warm throughput test
-│   └── scenario-d.sh   # Burst test
+│   └── scenario-c.sh   # Burst test
 ├── results/            # Output directory for test results
 └── docs/               # This documentation
 ```
@@ -392,19 +392,15 @@ bash loadtest/scenario-b.sh "$LAMBDA_ZIP_URL" "$LAMBDA_CONTAINER_URL" "$FARGATE_
 
 The script warms up all targets, then runs 500 requests at concurrency 10 and 50 for each. Results are saved to `results/scenario-b-*.txt`.
 
-### Scenario C — Cost Analysis
-
-No commands needed. See Assignment 4 in the Student Guide.
-
-### Scenario D — Burst from Zero (requires 20-min idle)
+### Scenario C — Burst from Zero (requires 20-min idle)
 
 ```bash
 # Ensure Lambda has been idle 20+ minutes
 source loadtest/endpoints.sh
-bash loadtest/scenario-d.sh "$LAMBDA_ZIP_URL" "$LAMBDA_CONTAINER_URL" "$FARGATE_URL" "$EC2_URL"
+bash loadtest/scenario-c.sh "$LAMBDA_ZIP_URL" "$LAMBDA_CONTAINER_URL" "$FARGATE_URL" "$EC2_URL"
 ```
 
-The script fires 200 requests at concurrency 50 to all four targets simultaneously. Results are saved to `results/scenario-d-*.txt`.
+The script fires 200 requests at concurrency 50 to all four targets simultaneously. Results are saved to `results/scenario-c-*.txt`.
 
 ---
 

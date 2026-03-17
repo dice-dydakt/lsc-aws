@@ -184,7 +184,7 @@ Warm environments:       10
 Cold starts triggered:   40
 ```
 
-This is why Scenario D (burst from zero) triggers multiple cold starts — and why Lambda's p99 under burst is dominated by cold-start latency.
+This is why Scenario C (burst from zero) triggers multiple cold starts — and why Lambda's p99 under burst is dominated by cold-start latency.
 
 **Provisioned Concurrency** pre-warms a specified number of environments. With 10 provisioned concurrent environments, the first 10 requests always skip Init Duration. This eliminates cold starts at the cost of continuous charges (~$0.0000097315/GB-second).
 

@@ -17,7 +17,7 @@ After completing this lab you should be able to:
 1. **Distinguish cold start types** — Lambda execution environment cold starts vs. Fargate task provisioning delays vs. EC2's always-warm model.
 2. **Measure and decompose latency** — Use CloudWatch Logs, X-Ray traces, and client-side timing to separate init, handler, and network components.
 3. **Build a cost model** — Compute per-request Lambda costs vs. always-on Fargate/EC2 costs and find the break-even RPS.
-4. **Make a quantified recommendation** — Defend an infrastructure choice using a Pareto frontier plot and explicit conditions for when your recommendation changes.
+4. **Make a quantified recommendation** — Defend an infrastructure choice using specific numbers and explicit conditions for when your recommendation changes.
 
 ---
 
@@ -102,7 +102,26 @@ Deploy the four targets (Lambda zip, Lambda container, Fargate, EC2) following t
 
 ---
 
-### Assignment 4: Scenario C — Cost at Zero Load
+### Assignment 4: Scenario C — Burst from Zero
+
+**Goal:** Simulate a traffic spike arriving after a period of inactivity.
+
+**What to do:**
+1. Let Lambda idle for 20 minutes.
+2. Simultaneously send 200 requests at concurrency=50 to all four targets.
+3. Record p50, p95, p99, and maximum latency.
+4. Check CloudWatch Logs for cold-start `Init Duration` entries during the burst window.
+
+**What to record:** Latency distribution for each target, with cold start count for Lambda.
+
+**Analysis:**
+- Explain why Lambda's burst p99 is much higher than Fargate/EC2.
+- Identify the bimodal distribution in Lambda latencies (warm cluster vs. cold-start cluster).
+- State whether Lambda meets the p99 < 500ms SLO under burst. If not, explain what would need to change.
+
+---
+
+### Assignment 5: Cost at Zero Load
 
 **Goal:** Compute the idle cost of each environment.
 
@@ -122,28 +141,9 @@ Deploy the four targets (Lambda zip, Lambda container, Fargate, EC2) following t
 
 ---
 
-### Assignment 5: Scenario D — Burst from Zero
+### Assignment 6: Cost Model, Break-Even, and Recommendation
 
-**Goal:** Simulate a traffic spike arriving after a period of inactivity.
-
-**What to do:**
-1. Let Lambda idle for 20 minutes.
-2. Simultaneously send 200 requests at concurrency=50 to all four targets.
-3. Record p50, p95, p99, and maximum latency.
-4. Check CloudWatch Logs for cold-start `Init Duration` entries during the burst window.
-
-**What to record:** Latency distribution for each target, with cold start count for Lambda.
-
-**Analysis:**
-- Explain why Lambda's burst p99 is much higher than Fargate/EC2.
-- Identify the bimodal distribution in Lambda latencies (warm cluster vs. cold-start cluster).
-- State whether Lambda meets the p99 < 500ms SLO under burst. If not, explain what would need to change.
-
----
-
-### Assignment 6: Cost Model and Break-Even Analysis
-
-**Goal:** Compute monthly costs under a realistic traffic model and find the break-even point.
+**Goal:** Compute monthly costs under a realistic traffic model, find the break-even point, and make a recommendation.
 
 **Traffic model:**
 - Peak: 100 RPS for 30 minutes/day
@@ -164,36 +164,20 @@ Use your measured p50 handler duration from Scenario B for `duration_seconds` an
 1. Computed monthly cost for each environment under this traffic model.
 2. **Break-even RPS** — at what average RPS does Lambda become more expensive than Fargate? Show the algebra.
 3. A **Cost vs. RPS line chart** showing Lambda's linear cost against Fargate/EC2's flat cost, with the break-even point marked.
-
----
-
-### Assignment 7: Pareto Frontier and Recommendation
-
-**Goal:** Synthesize all data into a recommendation.
-
-**Deliverables:**
-
-1. **Pareto frontier scatter plot** with:
-   - X axis: p99 latency under burst (Scenario D), in milliseconds
-   - Y axis: monthly cost under the traffic model from Assignment 6
-   - Each environment as one point
-   - An additional point for **Lambda with Provisioned Concurrency** (estimate its latency and cost — you don't need to deploy this)
-   - Label which solutions are Pareto-optimal
-
-2. **Recommendation** (1 page max):
+4. **Recommendation** (1 page max):
    - Given the SLO (p99 < 500ms) and traffic model, which environment do you recommend?
    - Justify with specific numbers from your measurements.
    - State the conditions under which your recommendation would change (e.g., "if average load exceeds X RPS..." or "if the SLO were relaxed to Y ms...").
 
 ---
 
-### Assignment 8: Reflection
+### Assignment 7: Reflection
 
 Write half a page answering:
 
 1. What did you not measure that would improve the analysis?
 2. What assumption in the cost model is most likely to be wrong?
-3. Where does Kubernetes fit on the Pareto plot you drew? What would you need to measure to place it there?
+3. Where does Kubernetes fit in this comparison? What would you need to measure to place it there?
 
 ---
 
@@ -204,9 +188,9 @@ Write half a page answering:
 | Setup correctness (Assignment 1) | 10 | All four environments deployed, functional, same workload |
 | Scenario A data + decomposition (Assignment 2) | 20 | Cold starts observed and quantified; zip vs container compared |
 | Scenario B latency table (Assignment 3) | 15 | All four environments, both concurrency levels |
-| Cost model (Assignment 6) | 20 | Correct formula application; break-even derived algebraically |
-| Pareto plot (Assignment 7) | 15 | Correct axes, Pareto-optimal solutions identified |
-| Recommendation quality (Assignment 7) | 15 | Quantitatively supported, conditions for reversal stated |
+| Scenario C burst data (Assignment 4) | 15 | Bimodal distribution identified, SLO assessment |
+| Cost model + break-even (Assignments 5–6) | 20 | Correct formula application; break-even derived algebraically |
+| Recommendation quality (Assignment 6) | 15 | Quantitatively supported, conditions for reversal stated |
 | Raw data submitted | 5 | Reproducibility check |
 | **Total** | **100** | |
 
@@ -219,8 +203,8 @@ Write half a page answering:
 Submit a single **PDF or ZIP** containing:
 
 1. **Raw data** — `oha` output files, CloudWatch REPORT line exports, AWS pricing screenshots with dates.
-2. **Figures** — Latency decomposition bar chart, latency table, cost vs. RPS chart, Pareto frontier plot.
-3. **Report** — Max 4 pages (excluding figures and raw data) covering Sections 1–4 as described above.
+2. **Figures** — Latency decomposition bar chart, latency table, cost vs. RPS chart.
+3. **Report** — Max 4 pages (excluding figures and raw data) covering all assignments.
 
 ---
 

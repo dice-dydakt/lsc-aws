@@ -147,7 +147,7 @@ def fig2_cost_vs_rps():
 # ============================================================
 def fig3_pareto_frontier():
     """Scatter plot: p99 burst latency vs monthly cost."""
-    # p99 burst latencies (Scenario D) - using server-side + in-region network
+    # p99 burst latencies (Scenario C) - using server-side + in-region network
     # From our measurements, subtracting ~260ms cross-Atlantic RTT:
     # Lambda zip burst p99 client: 1827ms, minus ~520ms network RTT ≈ 1307ms (includes cold starts)
     # But more accurately, use CloudWatch data:
@@ -217,7 +217,7 @@ def fig3_pareto_frontier():
     pareto_y = [p[1] for p in pareto_points]
     ax.plot(pareto_x, pareto_y, 'g--', alpha=0.5, linewidth=1.5, label='Pareto Frontier')
 
-    ax.set_xlabel('p99 Latency Under Burst (ms) — Scenario D')
+    ax.set_xlabel('p99 Latency Under Burst (ms) — Scenario C')
     ax.set_ylabel('Monthly Cost (USD) — Traffic Model from Section 9.3')
     ax.set_title('Figure 3: Pareto Frontier — Cost vs. Tail Latency')
     ax.legend(loc='upper right')
