@@ -338,41 +338,43 @@ The instance profile (LabRole) provides IAM credentials for ECR access without e
 
 | Tool | Used For | Why |
 |---|---|---|
-| **`hey`** | Fargate/EC2 throughput + burst | Single binary, built-in percentile reporting |
-| **`lambda_loadtest.py`** | Lambda with IAM auth | Handles SigV4 signing; `hey` doesn't support AWS auth |
-| **`curl`** | Scenario A (sequential, timed) | Fine-grained per-request timing with headers |
+| **`oha`** | All targets (Lambda, Fargate, EC2) | Single binary with native AWS SigV4 support, percentile reporting, histograms |
+| **`lambda_loadtest.py`** | Alternative Lambda tester | Python-based, auto-discovers AWS credentials from profiles/instance roles |
 | **`awscurl`** | Ad-hoc Lambda testing | CLI tool with SigV4 support |
 
-### 6.2 What `hey` Reports
+All scenario scripts use `oha` as the single load testing tool. For Lambda endpoints, `oha` signs requests automatically via `--aws-sigv4`. This ensures consistent measurement methodology across all targets.
+
+### 6.2 What `oha` Reports
 
 ```
 Summary:
-  Total:        5.2341 secs         ← Wall-clock time for all requests
-  Slowest:      1.4585 secs         ← Maximum latency (p100)
-  Fastest:      0.2962 secs         ← Minimum latency
-  Average:      0.3645 secs         ← Arithmetic mean
-  Requests/sec: 95.5267             ← Throughput
+  Success rate:   100.00%
+  Total:          5.2341 sec          ← Wall-clock time for all requests
+  Slowest:        1.4585 sec          ← Maximum latency (p100)
+  Fastest:        0.2962 sec          ← Minimum latency
+  Average:        0.3645 sec          ← Arithmetic mean
+  Requests/sec:   95.5267             ← Throughput
 
-Latency distribution:
-  10% in 0.3097 secs
-  25% in 0.3160 secs
-  50% in 0.3367 secs               ← p50 (median)
-  75% in 0.3594 secs
-  90% in 0.3953 secs
-  95% in 0.4356 secs               ← p95
-  99% in 1.3272 secs               ← p99
+Response time distribution:
+  10.00% in 0.3097 sec
+  25.00% in 0.3160 sec
+  50.00% in 0.3367 sec                ← p50 (median)
+  75.00% in 0.3594 sec
+  90.00% in 0.3953 sec
+  95.00% in 0.4356 sec                ← p95
+  99.00% in 1.3272 sec                ← p99
 ```
 
-The **latency distribution** is the most important output. Focus on p50, p95, and p99.
+The **response time distribution** is the most important output. Focus on p50, p95, and p99.
 
-**`hey` GitHub:** https://github.com/rakyll/hey
+**`oha` GitHub:** https://github.com/hatoo/oha
 
 ### 6.3 Measurement Confounds
 
 | Confound | Impact | Mitigation |
 |---|---|---|
 | **Network RTT** | Adds constant offset to all client-side times | Measure from in-region EC2; report server-side times separately |
-| **TLS handshake** | HTTPS endpoints have ~50ms overhead (connection reuse helps) | `hey` reuses connections; first request is slower |
+| **TLS handshake** | HTTPS endpoints have ~50ms overhead (connection reuse helps) | `oha` reuses connections; first request is slower |
 | **ALB overhead** | Adds ~2-5ms for Fargate | Acknowledge in analysis; compare to EC2 baseline |
 | **DNS resolution** | First request may be slow | Pre-resolve or warm up before measuring |
 | **Client-side contention** | Load generator CPU can become bottleneck at high concurrency | Use dedicated EC2 instance for load generation |
@@ -534,16 +536,25 @@ The most complex deployment script. Notable implementation details:
 - **Health check:** The task definition includes a container health check (`curl http://localhost:8080/health`), and the ALB target group has its own health check on `/health`. Both must pass before the task receives traffic.
 - **`assignPublicIp: ENABLED`:** Required in the default VPC (no NAT gateway). Without it, the task cannot pull the container image from ECR or send logs to CloudWatch.
 
-### 8.5 File: `loadtest/lambda_loadtest.py`
+### 8.5 File: `loadtest/oha-helpers.sh`
 
-A custom Python load tester that handles AWS SigV4 request signing. `hey` and most HTTP load testing tools do not support AWS IAM authentication.
+Shared helper script sourced by all scenario scripts. Provides two wrapper functions:
+
+- **`oha_lambda`** — calls `oha` with `--aws-sigv4 "aws:amz:<region>:lambda"` and AWS credentials for Lambda Function URL authentication.
+- **`oha_http`** — calls `oha` without signing for Fargate/EC2 endpoints.
+
+The helper auto-detects the `oha` binary (checks `PATH`, then `~/oha`) and loads AWS credentials from `~/.aws/credentials` or environment variables.
+
+### 8.6 File: `loadtest/lambda_loadtest.py`
+
+An alternative Python-based load tester that handles AWS SigV4 request signing using `botocore.auth.SigV4Auth`. Useful when `oha` is not available or when you need JSON output with per-request details (cold start detection, server-side timing).
 
 Key implementation details:
 
-- **SigV4 signing:** Uses `botocore.auth.SigV4Auth` to sign each request with the current AWS credentials. The service name is `lambda` (for Lambda Function URLs).
-- **Concurrency:** Uses `ThreadPoolExecutor` with configurable worker count. Each thread creates and signs its own request independently.
-- **Sequential mode:** For Scenario A, `--sequential-delay 1.0` sends one request per second with precise timing, matching the cold start characterization protocol.
-- **Response parsing:** Captures the response body to extract `query_time_ms` (server-side timing), since Lambda Function URLs don't forward custom response headers through the IAM auth layer.
+- **SigV4 signing:** Uses `botocore.auth.SigV4Auth` to sign each request. Auto-discovers credentials from profiles, environment, or instance roles.
+- **Concurrency:** Uses `ThreadPoolExecutor` with configurable worker count.
+- **Sequential mode:** `--sequential-delay 1.0` sends one request per second.
+- **Response parsing:** Extracts `query_time_ms` and `cold_start` from the response body.
 
 ---
 

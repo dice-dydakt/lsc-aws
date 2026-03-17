@@ -2,8 +2,8 @@
 # Scenario A: Lambda Cold Start Characterization
 # Run AFTER Lambda has been idle for 20+ minutes
 #
-# Automatically uses the Python SigV4 load tester for Lambda URLs
-# (required when Function URLs use --auth-type AWS_IAM, as on Academy accounts).
+# Uses oha with SigV4 signing for Lambda Function URLs.
+# Sends 30 sequential requests (1 per second) to each Lambda variant.
 #
 # Usage: ./scenario-a.sh <lambda-zip-url> <lambda-container-url>
 # Example: ./scenario-a.sh https://abc123.lambda-url.us-east-1.on.aws https://def456.lambda-url.us-east-1.on.aws
@@ -12,19 +12,15 @@ set -euo pipefail
 
 LAMBDA_ZIP_URL="${1:?Usage: $0 <lambda-zip-url> <lambda-container-url>}"
 LAMBDA_CONTAINER_URL="${2:?Usage: $0 <lambda-zip-url> <lambda-container-url>}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RESULTS_DIR="${SCRIPT_DIR}/../results"
-QUERY_FILE="${SCRIPT_DIR}/query.json"
-mkdir -p "$RESULTS_DIR"
+source "$(dirname "$0")/oha-helpers.sh"
 
 echo "=== Scenario A: Lambda Cold Start Characterization ==="
 echo "Ensure Lambda has been idle for 20+ minutes before running."
 echo ""
 
-echo "--- Lambda Zip (30 sequential requests, 1s delay) ---"
-python3 "${SCRIPT_DIR}/lambda_loadtest.py" "${LAMBDA_ZIP_URL}/search" \
-    -n 30 --sequential-delay 1.0 --query-file "$QUERY_FILE" \
-    --output "${RESULTS_DIR}/scenario-a-zip.json" --label "Scenario A: Zip"
+echo "--- Lambda Zip (30 sequential requests, 1/sec) ---"
+oha_lambda -n 30 -c 1 --burst-delay 1s --burst-rate 1 \
+    "${LAMBDA_ZIP_URL}/search" 2>&1 | tee "${RESULTS_DIR}/scenario-a-zip.txt"
 
 echo ""
 echo "Waiting 20 minutes before container variant (for cold start reset)..."
@@ -33,10 +29,9 @@ echo "Sleeping 1200s (20 min)..."
 sleep 1200 || true
 
 echo ""
-echo "--- Lambda Container (30 sequential requests, 1s delay) ---"
-python3 "${SCRIPT_DIR}/lambda_loadtest.py" "${LAMBDA_CONTAINER_URL}/search" \
-    -n 30 --sequential-delay 1.0 --query-file "$QUERY_FILE" \
-    --output "${RESULTS_DIR}/scenario-a-container.json" --label "Scenario A: Container"
+echo "--- Lambda Container (30 sequential requests, 1/sec) ---"
+oha_lambda -n 30 -c 1 --burst-delay 1s --burst-rate 1 \
+    "${LAMBDA_CONTAINER_URL}/search" 2>&1 | tee "${RESULTS_DIR}/scenario-a-container.txt"
 
 echo ""
 echo "=== Scenario A complete. Results in ${RESULTS_DIR} ==="

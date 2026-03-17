@@ -2,7 +2,7 @@
 # Scenario D: Burst from Zero
 # Run AFTER Lambda has been idle for 20+ minutes
 #
-# Uses hey for Fargate/EC2 and the Python SigV4 load tester for Lambda URLs.
+# Uses oha for all targets. SigV4 signing is applied to Lambda URLs.
 # All targets are hit simultaneously (background processes).
 #
 # Usage: ./scenario-d.sh <lambda-zip-url> <lambda-container-url> <fargate-alb-url> <ec2-url>
@@ -14,37 +14,23 @@ LAMBDA_ZIP_URL="${1:?Usage: $0 <lambda-zip-url> <lambda-container-url> <fargate-
 LAMBDA_CONTAINER_URL="${2:?}"
 FARGATE_URL="${3:?}"
 EC2_URL="${4:?}"
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-QUERY_FILE="${SCRIPT_DIR}/query.json"
-QUERY=$(cat "$QUERY_FILE")
-RESULTS_DIR="${SCRIPT_DIR}/../results"
-mkdir -p "$RESULTS_DIR"
+source "$(dirname "$0")/oha-helpers.sh"
 
 echo "=== Scenario D: Burst from Zero ==="
 echo "Ensure Lambda has been idle for 20+ minutes."
 echo "Launching 200 requests at concurrency=50 to ALL targets simultaneously..."
 echo ""
 
-# Launch all targets in parallel
-python3 "${SCRIPT_DIR}/lambda_loadtest.py" "${LAMBDA_ZIP_URL}/search" \
-    -n 200 -c 50 --query-file "$QUERY_FILE" \
-    --output "${RESULTS_DIR}/scenario-d-lambda-zip.json" \
-    --label "Scenario D: Lambda Zip Burst" &
+oha_lambda -n 200 -c 50 \
+    "${LAMBDA_ZIP_URL}/search" 2>&1 | tee "${RESULTS_DIR}/scenario-d-lambda-zip.txt" &
 
-python3 "${SCRIPT_DIR}/lambda_loadtest.py" "${LAMBDA_CONTAINER_URL}/search" \
-    -n 200 -c 50 --query-file "$QUERY_FILE" \
-    --output "${RESULTS_DIR}/scenario-d-lambda-container.json" \
-    --label "Scenario D: Lambda Container Burst" &
+oha_lambda -n 200 -c 50 \
+    "${LAMBDA_CONTAINER_URL}/search" 2>&1 | tee "${RESULTS_DIR}/scenario-d-lambda-container.txt" &
 
-hey -n 200 -c 50 -m POST \
-    -H "Content-Type: application/json" \
-    -d "$QUERY" \
+oha_http -n 200 -c 50 \
     "${FARGATE_URL}/search" 2>&1 | tee "${RESULTS_DIR}/scenario-d-fargate.txt" &
 
-hey -n 200 -c 50 -m POST \
-    -H "Content-Type: application/json" \
-    -d "$QUERY" \
+oha_http -n 200 -c 50 \
     "${EC2_URL}/search" 2>&1 | tee "${RESULTS_DIR}/scenario-d-ec2.txt" &
 
 wait

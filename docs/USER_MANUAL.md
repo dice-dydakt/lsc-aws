@@ -9,7 +9,8 @@ This manual walks you through deploying, testing, and cleaning up all lab resour
 - **AWS Academy account** with active lab session (check the Learner Lab console)
 - **AWS CLI v2** installed and configured with your Academy credentials
 - **Docker** installed and running (Docker Desktop on Windows/Mac, or native on Linux) — *not needed locally if using the EC2 workstation approach below*
-- **Python 3.10+** with `pip` (for query generation and optional Lambda load testing)
+- **Python 3.10+** with `pip` (for query generation)
+- **[oha](https://github.com/hatoo/oha)** — HTTP load testing tool with native AWS SigV4 support (replaces `hey`)
 - **Terminal/shell** access (bash recommended)
 
 ### Verify Prerequisites
@@ -58,13 +59,10 @@ sudo systemctl enable docker
 sudo usermod -aG docker ec2-user
 newgrp docker   # apply group change without re-login
 
-# hey (load testing tool)
-curl -sf https://hey-release.s3.us-east-2.amazonaws.com/hey_linux_amd64 -o hey
-chmod +x hey
-sudo mv hey /usr/local/bin/
-
-# Python dependencies (for Lambda SigV4 load tester)
-pip3 install boto3 botocore numpy
+# oha (load testing tool with AWS SigV4 support)
+curl -sL https://github.com/hatoo/oha/releases/latest/download/oha-linux-amd64 -o oha
+chmod +x oha
+sudo mv oha /usr/local/bin/
 
 # Clone the lab repo
 git clone https://github.com/dice-dydakt/lsc-aws.git
@@ -211,12 +209,9 @@ aws lambda invoke --function-name lsc-knn-zip \
     --payload '{"body": "{\"query\": [0.1, 0.2, 0.3]}"}' /tmp/out.json
 cat /tmp/out.json
 
-# Or use the Python load tester (handles SigV4 signing automatically):
-python3 loadtest/lambda_loadtest.py "$LAMBDA_ZIP_URL/search" \
-    -n 1 --sequential-delay 1.0 --query-file loadtest/query.json
 ```
 
-> **Note:** Lambda Function URLs use IAM auth, so plain `curl` will return `403 Forbidden`. Use the Python load tester (`loadtest/lambda_loadtest.py`) or `awscurl` for all Lambda HTTP requests.
+> **Note:** Lambda Function URLs use IAM auth, so plain `curl` will return `403 Forbidden`. The scenario scripts use `oha` with SigV4 signing to handle this automatically.
 
 ---
 
@@ -312,15 +307,7 @@ curl -X POST -H "Content-Type: application/json" -d @loadtest/query.json \
 bash deploy/06-loadgen.sh
 ```
 
-This deploys a t3.micro in the same region with `hey` pre-installed. This is optional — you can run tests from your local machine or any EC2 instance.
-
-**If you use the load generator:**
-```bash
-ssh ec2-user@<LOADGEN_IP>
-# Upload query.json and test scripts
-hey -n 10 -c 5 -m POST -H "Content-Type: application/json" \
-    -d '{"query": [0.1, ...]}' http://<EC2_IP>:8080/search
-```
+This deploys a t3.micro in the same region with `hey` pre-installed. This is optional — you can run tests from your local machine, the EC2 workstation, or any EC2 instance with `oha` installed.
 
 > **Tip:** For the most accurate measurements, run the load generator from within AWS (same region). Cross-region/internet latency adds a constant offset to all measurements.
 
@@ -346,6 +333,22 @@ export FARGATE_URL="http://<your-alb-dns>"
 export EC2_URL="http://<your-ec2-ip>:8080"
 ```
 
+### Install oha
+
+[oha](https://github.com/hatoo/oha) is a load testing tool with built-in AWS SigV4 support. The scenario scripts use it for all targets — Lambda (with IAM auth signing), Fargate, and EC2.
+
+```bash
+# Linux (x86_64)
+curl -sL https://github.com/hatoo/oha/releases/latest/download/oha-linux-amd64 -o oha
+chmod +x oha
+sudo mv oha /usr/local/bin/   # or: mv oha ~/oha and add ~/oha to PATH
+
+# Mac (Homebrew)
+brew install oha
+```
+
+The scenario scripts auto-detect `oha` in `PATH` or at `~/oha` and load AWS credentials from `~/.aws/credentials` or environment variables.
+
 ### Scenario A — Cold Start (requires 20-min idle)
 
 ```bash
@@ -354,21 +357,8 @@ source loadtest/endpoints.sh
 bash loadtest/scenario-a.sh "$LAMBDA_ZIP_URL" "$LAMBDA_CONTAINER_URL"
 ```
 
-On Academy accounts, Lambda Function URLs require IAM auth, so use the Python load tester instead of curl/hey:
+The script sends 30 sequential requests (1/sec) to each Lambda variant, with a 20-minute wait between zip and container. After running, check CloudWatch Logs for cold start entries:
 
-```bash
-# Lambda Zip — 30 sequential requests, 1s apart
-python3 loadtest/lambda_loadtest.py "$LAMBDA_ZIP_URL/search" \
-    -n 30 --sequential-delay 1.0 --query-file loadtest/query.json \
-    --output results/scenario-a-zip.json --label "Scenario A: Zip"
-
-# Lambda Container — wait 20 min idle again, then:
-python3 loadtest/lambda_loadtest.py "$LAMBDA_CONTAINER_URL/search" \
-    -n 30 --sequential-delay 1.0 --query-file loadtest/query.json \
-    --output results/scenario-a-container.json --label "Scenario A: Container"
-```
-
-After running, check CloudWatch Logs for REPORT lines with Init Duration:
 ```bash
 # Zip cold starts
 aws logs filter-log-events \
@@ -395,44 +385,12 @@ aws logs filter-log-events \
 
 ### Scenario B — Warm Throughput
 
-First warm up all endpoints with a few requests, then run the tests.
-
-**Fargate & EC2** (no auth needed — use `hey` via the scenario script):
 ```bash
 source loadtest/endpoints.sh
-
-# hey: 500 requests at concurrency 10 and 50
-hey -n 500 -c 10 -m POST -H "Content-Type: application/json" \
-    -D loadtest/query.json "$FARGATE_URL/search"
-hey -n 500 -c 50 -m POST -H "Content-Type: application/json" \
-    -D loadtest/query.json "$FARGATE_URL/search"
-
-hey -n 500 -c 10 -m POST -H "Content-Type: application/json" \
-    -D loadtest/query.json "$EC2_URL/search"
-hey -n 500 -c 50 -m POST -H "Content-Type: application/json" \
-    -D loadtest/query.json "$EC2_URL/search"
+bash loadtest/scenario-b.sh "$LAMBDA_ZIP_URL" "$LAMBDA_CONTAINER_URL" "$FARGATE_URL" "$EC2_URL"
 ```
 
-**Lambda** (IAM auth — use the Python load tester):
-```bash
-# Lambda Zip — concurrency 10 and 50
-python3 loadtest/lambda_loadtest.py "$LAMBDA_ZIP_URL/search" \
-    -n 500 -c 10 --query-file loadtest/query.json \
-    --output results/scenario-b-lambda-zip-c10.json
-
-python3 loadtest/lambda_loadtest.py "$LAMBDA_ZIP_URL/search" \
-    -n 500 -c 50 --query-file loadtest/query.json \
-    --output results/scenario-b-lambda-zip-c50.json
-
-# Lambda Container — concurrency 10 and 50
-python3 loadtest/lambda_loadtest.py "$LAMBDA_CONTAINER_URL/search" \
-    -n 500 -c 10 --query-file loadtest/query.json \
-    --output results/scenario-b-lambda-container-c10.json
-
-python3 loadtest/lambda_loadtest.py "$LAMBDA_CONTAINER_URL/search" \
-    -n 500 -c 50 --query-file loadtest/query.json \
-    --output results/scenario-b-lambda-container-c50.json
-```
+The script warms up all targets, then runs 500 requests at concurrency 10 and 50 for each. Results are saved to `results/scenario-b-*.txt`.
 
 ### Scenario C — Cost Analysis
 
@@ -440,35 +398,19 @@ No commands needed. See Assignment 4 in the Student Guide.
 
 ### Scenario D — Burst from Zero (requires 20-min idle)
 
-Ensure Lambda has been idle 20+ minutes, then send 200 requests at concurrency 50 to all targets.
-
-**Fargate & EC2:**
 ```bash
+# Ensure Lambda has been idle 20+ minutes
 source loadtest/endpoints.sh
-
-hey -n 200 -c 50 -m POST -H "Content-Type: application/json" \
-    -D loadtest/query.json "$FARGATE_URL/search"
-
-hey -n 200 -c 50 -m POST -H "Content-Type: application/json" \
-    -D loadtest/query.json "$EC2_URL/search"
+bash loadtest/scenario-d.sh "$LAMBDA_ZIP_URL" "$LAMBDA_CONTAINER_URL" "$FARGATE_URL" "$EC2_URL"
 ```
 
-**Lambda:**
-```bash
-python3 loadtest/lambda_loadtest.py "$LAMBDA_ZIP_URL/search" \
-    -n 200 -c 50 --query-file loadtest/query.json \
-    --output results/scenario-d-lambda-zip.json --label "Scenario D: Zip Burst"
-
-python3 loadtest/lambda_loadtest.py "$LAMBDA_CONTAINER_URL/search" \
-    -n 200 -c 50 --query-file loadtest/query.json \
-    --output results/scenario-d-lambda-container.json --label "Scenario D: Container Burst"
-```
+The script fires 200 requests at concurrency 50 to all four targets simultaneously. Results are saved to `results/scenario-d-*.txt`.
 
 ---
 
 ## Step 9: Collect Results
 
-All `hey` output is saved to `results/`. Additionally collect:
+All `oha` output is saved to `results/`. Additionally collect:
 
 ```bash
 # Export CloudWatch REPORT lines (Lambda cold start data)
@@ -521,11 +463,11 @@ aws ecr describe-repositories --repository-names lsc-knn-app 2>&1 | head -1
 | Problem | Cause | Solution |
 |---|---|---|
 | `ExpiredTokenException` | Academy session expired (~4hr) | Re-export credentials from Learner Lab console |
-| `403 Forbidden` on Lambda URL | Academy SCP blocks public Lambda URLs | Switch to `--auth-type AWS_IAM` and use `awscurl` |
+| `403 Forbidden` on Lambda URL | Lambda Function URL requires IAM auth | Deploy scripts already use `AWS_IAM`; scenario scripts handle signing via `oha --aws-sigv4` |
 | Fargate task stuck in PROVISIONING | Image pull failure or role permissions | Check `/ecs/lsc-knn-task` CloudWatch logs; verify LabRole has ECR permissions |
 | EC2 `Connection refused` on port 8080 | User-data still running | Wait 2 min; SSH in and check `docker ps` |
 | ALB returns 502 | Target not yet healthy | Wait for health check to pass; check target group health |
-| `hey` not found | Not installed on load generator | `wget https://hey-release.s3.us-east-2.amazonaws.com/hey_linux_amd64 -O hey && chmod +x hey` |
+| `oha` not found | Not installed | `curl -sL https://github.com/hatoo/oha/releases/latest/download/oha-linux-amd64 -o ~/oha && chmod +x ~/oha` |
 | Lambda zip import error | NumPy not in layer or handler imports Flask | Verify layer is attached; `handler.py` should NOT import Flask |
 | Different `results` arrays across endpoints | Different dataset seed or query | All must use seed=0 for dataset and seed=42 for query |
 

@@ -218,7 +218,7 @@ Write half a page answering:
 
 Submit a single **PDF or ZIP** containing:
 
-1. **Raw data** — `hey` output files, CloudWatch REPORT line exports, AWS pricing screenshots with dates.
+1. **Raw data** — `oha` output files, CloudWatch REPORT line exports, AWS pricing screenshots with dates.
 2. **Figures** — Latency decomposition bar chart, latency table, cost vs. RPS chart, Pareto frontier plot.
 3. **Report** — Max 4 pages (excluding figures and raw data) covering Sections 1–4 as described above.
 
