@@ -59,7 +59,7 @@ Deploy the four targets (Lambda zip, Lambda container, Fargate, EC2) following t
 
 **Analysis:**
 - Create a **stacked bar chart** decomposing total latency into: Network RTT, Init Duration, and Handler Duration — for zip cold start, container cold start, and warm invocations.
-- Estimate Network RTT using `curl` connect time from the load generator to the Lambda endpoint.
+- Estimate Network RTT as the difference between client-side total latency (from `oha`) and server-side time (Init Duration + Handler Duration from CloudWatch). For warm invocations: `Network RTT = total_latency − Duration`. For cold starts: `Network RTT = total_latency − Init Duration − Duration`. You can sanity-check this with `curl -s -w '%{time_connect}\n' -o /dev/null https://<lambda-url>` — this measures the TCP handshake time and works even without IAM signing, since the TCP connection completes before any authentication.
 - Comment on whether zip or container cold starts are faster, and explain why.
 
 ---
@@ -72,7 +72,7 @@ Deploy the four targets (Lambda zip, Lambda container, Fargate, EC2) following t
 1. Warm up all endpoints with 20 requests each.
 2. For each target, run 500 requests at concurrency=10. Record p50, p95, p99.
 3. Repeat at concurrency=50.
-4. Record server-side `query_time_ms` from the response body. You can sample this with a few `curl` calls to each endpoint, or extract it from CloudWatch application logs.
+4. Record server-side `query_time_ms` from the response body. For Fargate/EC2, sample with `curl`; for Lambda (IAM-auth), use `aws lambda invoke` or extract from CloudWatch application logs.
 
 **What to record:** A table like this:
 
