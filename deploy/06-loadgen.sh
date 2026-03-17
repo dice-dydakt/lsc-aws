@@ -38,8 +38,8 @@ AMI_ID=$(aws ec2 describe-images \
 # --- User data ---
 USER_DATA=$(cat <<'USERDATA'
 #!/bin/bash
-wget -q https://hey-release.s3.us-east-2.amazonaws.com/hey_linux_amd64 -O /usr/local/bin/hey
-chmod +x /usr/local/bin/hey
+curl -sL https://github.com/hatoo/oha/releases/latest/download/oha-linux-amd64 -o /usr/local/bin/oha
+chmod +x /usr/local/bin/oha
 yum install -y python3 jq
 USERDATA
 )
@@ -88,4 +88,4 @@ PUBLIC_IP=$(aws ec2 describe-instances \
 
 echo "=== Load Generator done. Public IP: ${PUBLIC_IP} ==="
 echo "SSH: ssh ec2-user@${PUBLIC_IP}"
-echo "NOTE: Wait ~1 minute for user-data to complete, then verify: ssh ec2-user@${PUBLIC_IP} 'hey --help'"
+echo "NOTE: Wait ~1 minute for user-data to complete, then verify: ssh ec2-user@${PUBLIC_IP} 'oha --version'"

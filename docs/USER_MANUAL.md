@@ -307,7 +307,7 @@ curl -X POST -H "Content-Type: application/json" -d @loadtest/query.json \
 bash deploy/06-loadgen.sh
 ```
 
-This deploys a t3.micro in the same region with `hey` pre-installed. This is optional — you can run tests from your local machine, the EC2 workstation, or any EC2 instance with `oha` installed.
+This deploys a t3.micro in the same region with `oha` pre-installed. This is optional — you can run tests from your local machine, the EC2 workstation, or any EC2 instance with `oha` installed.
 
 > **Tip:** For the most accurate measurements, run the load generator from within AWS (same region). Cross-region/internet latency adds a constant offset to all measurements.
 

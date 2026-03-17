@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Load tester for Lambda Function URLs with AWS IAM auth (SigV4 signing).
-Replaces 'hey' for Lambda endpoints since hey doesn't support SigV4.
+Alternative to oha for Lambda endpoints. Handles SigV4 signing with auto-credential discovery.
 """
 import argparse
 import json
@@ -128,7 +128,7 @@ def run_load_test(url, body, credentials, region, num_requests, concurrency, seq
 
 
 def print_summary(results, label):
-    """Print hey-style summary of results."""
+    """Print summary of results with percentiles."""
     latencies = [r["latency_ms"] for r in results if r.get("status") == 200]
     errors = [r for r in results if r.get("status") != 200]
     server_times = []
