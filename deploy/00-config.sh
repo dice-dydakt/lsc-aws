@@ -33,11 +33,13 @@ export TG_NAME=lsc-knn-tg
 
 # EC2
 export APP_SG_NAME=lsc-knn-app-sg
-export LG_SG_NAME=lsc-knn-lg-sg
+export WS_SG_NAME=lsc-knn-ws-sg
+export KEY_NAME=lsc-knn-key
 
 # Paths
 export PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export WORKLOAD_DIR="${PROJECT_DIR}/workload"
 export DEPLOY_DIR="${PROJECT_DIR}/deploy"
+export KEY_FILE="${DEPLOY_DIR}/${KEY_NAME}.pem"
 
 echo "Config loaded: ACCOUNT_ID=${ACCOUNT_ID}, REGION=${AWS_REGION}"

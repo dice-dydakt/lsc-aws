@@ -29,52 +29,25 @@ python3 --version
 
 ### Alternative: EC2-Based Workstation (No Local Docker Required)
 
-If you don't have Docker on your laptop (or want in-region measurements with lower latency), you can run the entire lab from an EC2 instance.
-
-**Launch a workstation instance:**
-
-1. Go to the EC2 console → **Launch Instance**
-2. Choose **Amazon Linux 2023** AMI
-3. Instance type: **t3.small** (2 vCPU, 2 GB — enough to build images)
-4. Key pair: create or select one for SSH access
-5. Security group: allow **SSH (port 22)** from your IP
-6. IAM instance profile: select **LabInstanceProfile** (if it exists) or create one:
-   ```bash
-   aws iam create-instance-profile --instance-profile-name LabInstanceProfile
-   aws iam add-role-to-instance-profile --instance-profile-name LabInstanceProfile --role-name LabRole
-   ```
-7. Storage: **20 GB** gp3 (Docker images need space)
-8. Launch and SSH in:
-   ```bash
-   ssh -i your-key.pem ec2-user@<WORKSTATION_IP>
-   ```
-
-**Install dependencies on the instance:**
+If you don't have Docker on your laptop (or want in-region measurements with lower latency), you can run the entire lab from an EC2 instance. A single script automates the setup:
 
 ```bash
-# Docker
-sudo dnf install -y docker git python3-pip
-sudo systemctl start docker
-sudo systemctl enable docker
-sudo usermod -aG docker ec2-user
-newgrp docker   # apply group change without re-login
+bash deploy/06-workstation.sh
+```
 
-# oha (load testing tool with AWS SigV4 support)
-curl -sL https://github.com/hatoo/oha/releases/latest/download/oha-linux-amd64 -o oha
-chmod +x oha
-sudo mv oha /usr/local/bin/
+This launches a **t3.small** (2 vCPU, 2 GB) with 20 GB storage, creates an SSH key pair, and installs Docker, git, pip, jq, and oha via user-data. It also clones the lab repo into `/home/ec2-user/lsc-aws`. Wait ~2 minutes after launch, then SSH in:
 
-# Clone the lab repo
-git clone https://github.com/dice-dydakt/lsc-aws.git
+```bash
+ssh -i deploy/lsc-knn-key.pem ec2-user@<WORKSTATION_IP>
 cd lsc-aws
 ```
 
-**No credential files needed** — the instance profile provides AWS credentials automatically via the EC2 metadata service. Verify with:
+If a **LabInstanceProfile** exists, it is attached automatically — no credential files needed. Verify with:
 ```bash
 aws sts get-caller-identity
 ```
 
-> **Benefit:** Running from an EC2 instance in `us-east-1` eliminates internet latency from your measurements. All traffic stays within the AWS region, giving you cleaner, more accurate results. You also don't need the separate load generator instance (Step 7) since your workstation is already in-region.
+> **Benefit:** Running from an EC2 instance in `us-east-1` eliminates internet latency from your measurements. All traffic stays within the AWS region, giving you cleaner, more accurate results. The workstation also serves as the load generator — no separate instance needed.
 
 > **Cost:** A t3.small costs ~$0.023/hour. Remember to **stop or terminate** it when you're done.
 
@@ -126,7 +99,7 @@ lsc_aws/
 │   ├── 03-lambda-container.sh  # Deploy Lambda container variant
 │   ├── 04-fargate.sh   # Deploy ECS Fargate + ALB
 │   ├── 05-ec2-app.sh   # Deploy EC2 app instance
-│   ├── 06-loadgen.sh   # Deploy load generator instance
+│   ├── 06-workstation.sh  # Deploy EC2 workstation (Docker, oha, git)
 │   └── 99-cleanup.sh   # Tear down all resources
 ├── loadtest/           # Load testing scripts
 │   ├── generate_query.py   # Generate fixed query vector
@@ -306,15 +279,15 @@ curl -X POST -H "Content-Type: application/json" -d @loadtest/query.json \
 
 ---
 
-## Step 7: Deploy Load Generator (Optional)
+## Step 7: Deploy EC2 Workstation (Optional)
 
 ```bash
-bash deploy/06-loadgen.sh
+bash deploy/06-workstation.sh
 ```
 
-This deploys a t3.micro in the same region with `oha` pre-installed. This is optional — you can run tests from your local machine, the EC2 workstation, or any EC2 instance with `oha` installed.
+This deploys a t3.small in the same region with Docker, git, oha, and the lab repo pre-installed. Use it as both your development environment and load generator. This is optional — you can run tests from your local machine if you have Docker and oha installed locally.
 
-> **Tip:** For the most accurate measurements, run the load generator from within AWS (same region). Cross-region/internet latency adds a constant offset to all measurements.
+> **Tip:** For the most accurate measurements, run load tests from within AWS (same region). Cross-region/internet latency adds a constant offset to all measurements.
 
 ---
 

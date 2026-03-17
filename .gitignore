@@ -19,6 +19,7 @@ results/*.txt
 
 # AWS credentials (never commit)
 .aws/
+*.pem
 
 # Not part of the student template
 CLAUDE.md

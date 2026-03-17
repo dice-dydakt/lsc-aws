@@ -2,7 +2,19 @@
 set -euo pipefail
 source "$(dirname "$0")/00-config.sh"
 
-echo "=== Step 6: Load Generator Instance (t3.micro) ==="
+echo "=== Step 6: EC2 Workstation (t3.small) ==="
+
+# --- Key Pair ---
+if ! aws ec2 describe-key-pairs --key-names "$KEY_NAME" --region "$AWS_REGION" &>/dev/null; then
+    echo "Creating key pair: ${KEY_NAME}"
+    aws ec2 create-key-pair \
+        --key-name "$KEY_NAME" \
+        --query 'KeyMaterial' --output text \
+        --region "$AWS_REGION" > "$KEY_FILE"
+    chmod 600 "$KEY_FILE"
+else
+    echo "Key pair already exists: ${KEY_NAME}"
+fi
 
 # --- Get default VPC ---
 VPC_ID=$(aws ec2 describe-vpcs \
@@ -10,15 +22,15 @@ VPC_ID=$(aws ec2 describe-vpcs \
     --query 'Vpcs[0].VpcId' --output text --region "$AWS_REGION")
 
 # --- Security Group ---
-echo "Creating load generator security group..."
+echo "Creating workstation security group..."
 SG_ID=$(aws ec2 describe-security-groups \
-    --filters "Name=group-name,Values=${LG_SG_NAME}" "Name=vpc-id,Values=${VPC_ID}" \
+    --filters "Name=group-name,Values=${WS_SG_NAME}" "Name=vpc-id,Values=${VPC_ID}" \
     --query 'SecurityGroups[0].GroupId' --output text --region "$AWS_REGION" 2>/dev/null)
 
 if [ "$SG_ID" = "None" ] || [ -z "$SG_ID" ]; then
     SG_ID=$(aws ec2 create-security-group \
-        --group-name "$LG_SG_NAME" \
-        --description "Load generator for k-NN lab" \
+        --group-name "$WS_SG_NAME" \
+        --description "EC2 workstation for k-NN lab" \
         --vpc-id "$VPC_ID" \
         --query 'GroupId' --output text --region "$AWS_REGION")
     aws ec2 authorize-security-group-ingress \
@@ -38,15 +50,23 @@ AMI_ID=$(aws ec2 describe-images \
 # --- User data ---
 USER_DATA=$(cat <<'USERDATA'
 #!/bin/bash
+dnf install -y docker git python3-pip jq
+systemctl start docker
+systemctl enable docker
+usermod -aG docker ec2-user
+
+# oha load testing tool
 curl -sL https://github.com/hatoo/oha/releases/latest/download/oha-linux-amd64 -o /usr/local/bin/oha
 chmod +x /usr/local/bin/oha
-yum install -y python3 jq
+
+# Clone lab repo
+su - ec2-user -c 'git clone https://github.com/dice-dydakt/lsc-aws.git'
 USERDATA
 )
 
 # --- Check for existing instance ---
 EXISTING_ID=$(aws ec2 describe-instances \
-    --filters "Name=tag:Name,Values=lsc-knn-loadgen" "Name=instance-state-name,Values=running,pending" \
+    --filters "Name=tag:Name,Values=lsc-knn-workstation" "Name=instance-state-name,Values=running,pending" \
     --query 'Reservations[0].Instances[0].InstanceId' --output text \
     --region "$AWS_REGION" 2>/dev/null)
 
@@ -54,19 +74,21 @@ if [ "$EXISTING_ID" != "None" ] && [ -n "$EXISTING_ID" ]; then
     echo "Instance already running: ${EXISTING_ID}"
     INSTANCE_ID="$EXISTING_ID"
 else
-    # Check for instance profile for load gen
+    # Check for instance profile
     INSTANCE_PROFILE_NAME=""
     if aws iam get-instance-profile --instance-profile-name LabInstanceProfile &>/dev/null; then
         INSTANCE_PROFILE_NAME="LabInstanceProfile"
     fi
 
-    echo "Launching load generator..."
+    echo "Launching workstation..."
     LAUNCH_ARGS=(
         --image-id "$AMI_ID"
-        --instance-type t3.micro
+        --instance-type t3.small
+        --key-name "$KEY_NAME"
         --security-group-ids "$SG_ID"
         --user-data "$USER_DATA"
-        --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=lsc-knn-loadgen}]"
+        --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=20,VolumeType=gp3}'
+        --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=lsc-knn-workstation}]"
         --query 'Instances[0].InstanceId' --output text
         --region "$AWS_REGION"
     )
@@ -86,6 +108,8 @@ PUBLIC_IP=$(aws ec2 describe-instances \
     --query 'Reservations[0].Instances[0].PublicIpAddress' --output text \
     --region "$AWS_REGION")
 
-echo "=== Load Generator done. Public IP: ${PUBLIC_IP} ==="
-echo "SSH: ssh ec2-user@${PUBLIC_IP}"
-echo "NOTE: Wait ~1 minute for user-data to complete, then verify: ssh ec2-user@${PUBLIC_IP} 'oha --version'"
+echo "=== Workstation ready. Public IP: ${PUBLIC_IP} ==="
+echo "SSH: ssh -i ${KEY_FILE} ec2-user@${PUBLIC_IP}"
+echo "NOTE: Wait ~2 minutes for user-data to complete, then:"
+echo "  ssh -i ${KEY_FILE} ec2-user@${PUBLIC_IP}"
+echo "  cd lsc-aws && oha --version && docker --version"

@@ -6,7 +6,7 @@ echo "=== Cleaning up all lab resources ==="
 
 # --- Terminate EC2 instances ---
 echo "Terminating EC2 instances..."
-for TAG_NAME in lsc-knn-app lsc-knn-loadgen; do
+for TAG_NAME in lsc-knn-app lsc-knn-workstation; do
     IDS=$(aws ec2 describe-instances \
         --filters "Name=tag:Name,Values=${TAG_NAME}" "Name=instance-state-name,Values=running,pending,stopped" \
         --query 'Reservations[*].Instances[*].InstanceId' --output text \
@@ -100,7 +100,7 @@ aws ecr delete-repository \
 echo "Waiting for instances to terminate..."
 sleep 30
 echo "Deleting security groups..."
-for SG_NAME in lsc-knn-alb-sg lsc-knn-task-sg "$APP_SG_NAME" "$LG_SG_NAME"; do
+for SG_NAME in lsc-knn-alb-sg lsc-knn-task-sg "$APP_SG_NAME" "$WS_SG_NAME"; do
     SG_ID=$(aws ec2 describe-security-groups \
         --filters "Name=group-name,Values=${SG_NAME}" \
         --query 'SecurityGroups[0].GroupId' --output text \
