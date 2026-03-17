@@ -45,16 +45,16 @@ FUNC_URL=$(aws lambda get-function-url-config \
 if [ -z "$FUNC_URL" ] || [ "$FUNC_URL" = "None" ]; then
     FUNC_URL=$(aws lambda create-function-url-config \
         --function-name "$LAMBDA_CONTAINER_NAME" \
-        --auth-type NONE \
+        --auth-type AWS_IAM \
         --region "$AWS_REGION" \
         --query 'FunctionUrl' --output text)
 
     aws lambda add-permission \
         --function-name "$LAMBDA_CONTAINER_NAME" \
-        --statement-id FunctionURLPublic \
+        --statement-id FunctionURLInvoke \
         --action lambda:InvokeFunctionUrl \
         --principal "*" \
-        --function-url-auth-type NONE \
+        --function-url-auth-type AWS_IAM \
         --region "$AWS_REGION" || true
 fi
 

@@ -2,6 +2,9 @@
 # Scenario A: Lambda Cold Start Characterization
 # Run AFTER Lambda has been idle for 20+ minutes
 #
+# Automatically uses the Python SigV4 load tester for Lambda URLs
+# (required when Function URLs use --auth-type AWS_IAM, as on Academy accounts).
+#
 # Usage: ./scenario-a.sh <lambda-zip-url> <lambda-container-url>
 # Example: ./scenario-a.sh https://abc123.lambda-url.us-east-1.on.aws https://def456.lambda-url.us-east-1.on.aws
 
@@ -10,62 +13,34 @@ set -euo pipefail
 LAMBDA_ZIP_URL="${1:?Usage: $0 <lambda-zip-url> <lambda-container-url>}"
 LAMBDA_CONTAINER_URL="${2:?Usage: $0 <lambda-zip-url> <lambda-container-url>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-QUERY=$(cat "${SCRIPT_DIR}/query.json")
 RESULTS_DIR="${SCRIPT_DIR}/../results"
+QUERY_FILE="${SCRIPT_DIR}/query.json"
 mkdir -p "$RESULTS_DIR"
 
 echo "=== Scenario A: Lambda Cold Start Characterization ==="
 echo "Ensure Lambda has been idle for 20+ minutes before running."
 echo ""
 
-for VARIANT in zip container; do
-    if [ "$VARIANT" = "zip" ]; then
-        URL="${LAMBDA_ZIP_URL}"
-    else
-        URL="${LAMBDA_CONTAINER_URL}"
-    fi
+echo "--- Lambda Zip (30 sequential requests, 1s delay) ---"
+python3 "${SCRIPT_DIR}/lambda_loadtest.py" "${LAMBDA_ZIP_URL}/search" \
+    -n 30 --sequential-delay 1.0 --query-file "$QUERY_FILE" \
+    --output "${RESULTS_DIR}/scenario-a-zip.json" --label "Scenario A: Zip"
 
-    OUTFILE="${RESULTS_DIR}/scenario-a-${VARIANT}.txt"
-    echo "--- Lambda ${VARIANT} ---" | tee "$OUTFILE"
-    echo "URL: ${URL}" | tee -a "$OUTFILE"
-    echo "" | tee -a "$OUTFILE"
+echo ""
+echo "Waiting 20 minutes before container variant (for cold start reset)..."
+echo "Press Ctrl+C to skip the wait if running variants separately."
+echo "Sleeping 1200s (20 min)..."
+sleep 1200 || true
 
-    for i in $(seq 1 30); do
-        echo "Request ${i}/30:" | tee -a "$OUTFILE"
+echo ""
+echo "--- Lambda Container (30 sequential requests, 1s delay) ---"
+python3 "${SCRIPT_DIR}/lambda_loadtest.py" "${LAMBDA_CONTAINER_URL}/search" \
+    -n 30 --sequential-delay 1.0 --query-file "$QUERY_FILE" \
+    --output "${RESULTS_DIR}/scenario-a-container.json" --label "Scenario A: Container"
 
-        # Capture timing and response
-        RESP=$(curl -s -w '\n{"curl_time_total": %{time_total}, "curl_time_connect": %{time_connect}, "curl_time_starttransfer": %{time_starttransfer}}' \
-            -X POST \
-            -H "Content-Type: application/json" \
-            -D /tmp/headers.txt \
-            -d "$QUERY" \
-            "${URL}/search" 2>/dev/null)
-
-        # Extract response body (everything before the last line)
-        BODY=$(echo "$RESP" | head -n -1)
-        TIMING=$(echo "$RESP" | tail -n 1)
-
-        # Extract headers
-        COLD_START=$(grep -i "x-cold-start" /tmp/headers.txt 2>/dev/null | tr -d '\r' | awk '{print $2}' || echo "unknown")
-        SERVER_TIME=$(grep -i "x-server-time-ms" /tmp/headers.txt 2>/dev/null | tr -d '\r' | awk '{print $2}' || echo "unknown")
-
-        echo "  Cold-Start: ${COLD_START}" | tee -a "$OUTFILE"
-        echo "  Server-Time-Ms: ${SERVER_TIME}" | tee -a "$OUTFILE"
-        echo "  Timing: ${TIMING}" | tee -a "$OUTFILE"
-        echo "  Response: $(echo "$BODY" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps({k:d[k] for k in ["query_time_ms","instance_id"]}, indent=None))' 2>/dev/null || echo "$BODY")" | tee -a "$OUTFILE"
-        echo "" | tee -a "$OUTFILE"
-
-        sleep 1
-    done
-
-    echo "" | tee -a "$OUTFILE"
-    echo "Waiting 20 minutes before next variant (for cold start reset)..."
-    echo "Press Ctrl+C to skip the wait if running variants separately."
-
-    if [ "$VARIANT" = "zip" ]; then
-        echo "Sleeping 1200s (20 min)... Press Ctrl+C and re-run with container URL to skip."
-        sleep 1200 || true
-    fi
-done
-
+echo ""
 echo "=== Scenario A complete. Results in ${RESULTS_DIR} ==="
+echo ""
+echo "Next: check CloudWatch for Init Duration (cold start) entries:"
+echo "  aws logs filter-log-events --log-group-name /aws/lambda/lsc-knn-zip --filter-pattern 'Init Duration' --start-time \$(date -d '30 minutes ago' +%s000) --query 'events[*].message' --output text"
+echo "  aws logs filter-log-events --log-group-name /aws/lambda/lsc-knn-container --filter-pattern 'Init Duration' --start-time \$(date -d '30 minutes ago' +%s000) --query 'events[*].message' --output text"

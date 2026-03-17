@@ -2,6 +2,9 @@
 # Scenario D: Burst from Zero
 # Run AFTER Lambda has been idle for 20+ minutes
 #
+# Uses hey for Fargate/EC2 and the Python SigV4 load tester for Lambda URLs.
+# All targets are hit simultaneously (background processes).
+#
 # Usage: ./scenario-d.sh <lambda-zip-url> <lambda-container-url> <fargate-alb-url> <ec2-url>
 # Example: ./scenario-d.sh https://abc.lambda-url.us-east-1.on.aws https://def.lambda-url.us-east-1.on.aws http://alb-dns-name http://1.2.3.4:8080
 
@@ -13,7 +16,8 @@ FARGATE_URL="${3:?}"
 EC2_URL="${4:?}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-QUERY=$(cat "${SCRIPT_DIR}/query.json")
+QUERY_FILE="${SCRIPT_DIR}/query.json"
+QUERY=$(cat "$QUERY_FILE")
 RESULTS_DIR="${SCRIPT_DIR}/../results"
 mkdir -p "$RESULTS_DIR"
 
@@ -22,15 +26,16 @@ echo "Ensure Lambda has been idle for 20+ minutes."
 echo "Launching 200 requests at concurrency=50 to ALL targets simultaneously..."
 echo ""
 
-hey -n 200 -c 50 -m POST \
-    -H "Content-Type: application/json" \
-    -d "$QUERY" \
-    "${LAMBDA_ZIP_URL}/search" 2>&1 | tee "${RESULTS_DIR}/scenario-d-lambda-zip.txt" &
+# Launch all targets in parallel
+python3 "${SCRIPT_DIR}/lambda_loadtest.py" "${LAMBDA_ZIP_URL}/search" \
+    -n 200 -c 50 --query-file "$QUERY_FILE" \
+    --output "${RESULTS_DIR}/scenario-d-lambda-zip.json" \
+    --label "Scenario D: Lambda Zip Burst" &
 
-hey -n 200 -c 50 -m POST \
-    -H "Content-Type: application/json" \
-    -d "$QUERY" \
-    "${LAMBDA_CONTAINER_URL}/search" 2>&1 | tee "${RESULTS_DIR}/scenario-d-lambda-container.txt" &
+python3 "${SCRIPT_DIR}/lambda_loadtest.py" "${LAMBDA_CONTAINER_URL}/search" \
+    -n 200 -c 50 --query-file "$QUERY_FILE" \
+    --output "${RESULTS_DIR}/scenario-d-lambda-container.json" \
+    --label "Scenario D: Lambda Container Burst" &
 
 hey -n 200 -c 50 -m POST \
     -H "Content-Type: application/json" \

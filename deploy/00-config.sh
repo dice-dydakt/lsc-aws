@@ -2,7 +2,7 @@
 # Shared configuration for all deployment scripts
 
 export AWS_REGION=us-east-1
-export ACCOUNT_ID=381492111392
+export ACCOUNT_ID=YOUR_ACCOUNT_ID
 export LAB_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/LabRole"
 
 # ECR

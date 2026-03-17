@@ -41,12 +41,31 @@ def send_request(url, body, credentials, region):
             elapsed = (time.perf_counter() - start) * 1000
             response_body = resp.read().decode()
             headers = dict(resp.headers)
+
+            # Try headers first, fall back to parsing the JSON body
+            cold_start = headers.get("X-Cold-Start", headers.get("x-cold-start"))
+            server_time = headers.get("X-Server-Time-Ms", headers.get("x-server-time-ms"))
+            instance_id = headers.get("X-Instance-Id", headers.get("x-instance-id"))
+
+            try:
+                body_json = json.loads(response_body)
+                if not cold_start:
+                    cs = body_json.get("cold_start")
+                    if cs is not None:
+                        cold_start = str(cs).lower()
+                if not server_time:
+                    server_time = str(body_json.get("query_time_ms", "unknown"))
+                if not instance_id:
+                    instance_id = body_json.get("instance_id", "unknown")
+            except (json.JSONDecodeError, KeyError):
+                pass
+
             return {
                 "status": resp.status,
                 "latency_ms": elapsed,
-                "cold_start": headers.get("X-Cold-Start", "unknown"),
-                "server_time_ms": headers.get("X-Server-Time-Ms", "unknown"),
-                "instance_id": headers.get("X-Instance-Id", "unknown"),
+                "cold_start": cold_start or "unknown",
+                "server_time_ms": server_time or "unknown",
+                "instance_id": instance_id or "unknown",
                 "body": response_body,
             }
     except Exception as e:

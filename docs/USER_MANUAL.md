@@ -8,7 +8,7 @@ This manual walks you through deploying, testing, and cleaning up all lab resour
 
 - **AWS Academy account** with active lab session (check the Learner Lab console)
 - **AWS CLI v2** installed and configured with your Academy credentials
-- **Docker** installed and running (Docker Desktop on Windows/Mac, or native on Linux)
+- **Docker** installed and running (Docker Desktop on Windows/Mac, or native on Linux) — *not needed locally if using the EC2 workstation approach below*
 - **Python 3.10+** with `pip` (for query generation and optional Lambda load testing)
 - **Terminal/shell** access (bash recommended)
 
@@ -26,7 +26,67 @@ docker --version
 python3 --version
 ```
 
+### Alternative: EC2-Based Workstation (No Local Docker Required)
+
+If you don't have Docker on your laptop (or want in-region measurements with lower latency), you can run the entire lab from an EC2 instance.
+
+**Launch a workstation instance:**
+
+1. Go to the EC2 console → **Launch Instance**
+2. Choose **Amazon Linux 2023** AMI
+3. Instance type: **t3.small** (2 vCPU, 2 GB — enough to build images)
+4. Key pair: create or select one for SSH access
+5. Security group: allow **SSH (port 22)** from your IP
+6. IAM instance profile: select **LabInstanceProfile** (if it exists) or create one:
+   ```bash
+   aws iam create-instance-profile --instance-profile-name LabInstanceProfile
+   aws iam add-role-to-instance-profile --instance-profile-name LabInstanceProfile --role-name LabRole
+   ```
+7. Storage: **20 GB** gp3 (Docker images need space)
+8. Launch and SSH in:
+   ```bash
+   ssh -i your-key.pem ec2-user@<WORKSTATION_IP>
+   ```
+
+**Install dependencies on the instance:**
+
+```bash
+# Docker
+sudo dnf install -y docker git python3-pip
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker ec2-user
+newgrp docker   # apply group change without re-login
+
+# hey (load testing tool)
+curl -sf https://hey-release.s3.us-east-2.amazonaws.com/hey_linux_amd64 -o hey
+chmod +x hey
+sudo mv hey /usr/local/bin/
+
+# Python dependencies (for Lambda SigV4 load tester)
+pip3 install boto3 botocore numpy
+
+# Clone the lab repo
+git clone https://github.com/dice-dydakt/lsc-aws.git
+cd lsc-aws
+```
+
+**No credential files needed** — the instance profile provides AWS credentials automatically via the EC2 metadata service. Verify with:
+```bash
+aws sts get-caller-identity
+```
+
+> **Benefit:** Running from an EC2 instance in `us-east-1` eliminates internet latency from your measurements. All traffic stays within the AWS region, giving you cleaner, more accurate results. You also don't need the separate load generator instance (Step 7) since your workstation is already in-region.
+
+> **Cost:** A t3.small costs ~$0.023/hour. Remember to **stop or terminate** it when you're done.
+
+From here, follow all remaining steps (Step 1 onward) exactly as written — everything works the same.
+
+---
+
 ### Configure AWS Credentials
+
+If you are working from your **local machine** (not an EC2 instance with an instance profile), you need to configure credentials manually.
 
 Your AWS Academy credentials are temporary. From the Learner Lab console:
 
@@ -140,32 +200,23 @@ bash deploy/02-lambda-zip.sh
 2. Publishes the layer to Lambda
 3. Packages `handler.py`, `app.py`, `generate_dataset.py` into a zip
 4. Creates the Lambda function with the NumPy layer, 512MB memory, X-Ray tracing
-5. Creates a public Function URL
+5. Creates a Function URL with **IAM auth** (required by Academy accounts)
 
 **The script outputs the Function URL.** Save it — you'll need it for testing.
 
 **Verify:**
 ```bash
-# If Function URL uses NONE auth (may not work on Academy accounts):
-curl -X POST -H "Content-Type: application/json" -d @loadtest/query.json \
-    <FUNCTION_URL>/search
-
-# If you get a 403, use awscurl with IAM signing:
-pip install awscurl
-awscurl --service lambda -X POST -H "Content-Type: application/json" \
-    -d @loadtest/query.json <FUNCTION_URL>/search
-
-# Or test via CLI invoke:
+# Test via CLI invoke (bypasses Function URL auth):
 aws lambda invoke --function-name lsc-knn-zip \
     --payload '{"body": "{\"query\": [0.1, 0.2, 0.3]}"}' /tmp/out.json
 cat /tmp/out.json
+
+# Or use the Python load tester (handles SigV4 signing automatically):
+python3 loadtest/lambda_loadtest.py "$LAMBDA_ZIP_URL/search" \
+    -n 1 --sequential-delay 1.0 --query-file loadtest/query.json
 ```
 
-> **Academy note:** Some Academy accounts block unauthenticated Lambda Function URLs via Service Control Policies. If you get `403 Forbidden`, switch to IAM auth:
-> ```bash
-> aws lambda update-function-url-config --function-name lsc-knn-zip --auth-type AWS_IAM
-> ```
-> Then use `awscurl` or the Python load tester (`loadtest/lambda_loadtest.py`) which handles SigV4 signing.
+> **Note:** Lambda Function URLs use IAM auth, so plain `curl` will return `403 Forbidden`. Use the Python load tester (`loadtest/lambda_loadtest.py`) or `awscurl` for all Lambda HTTP requests.
 
 ---
 
@@ -176,6 +227,13 @@ bash deploy/03-lambda-container.sh
 ```
 
 Same as Step 3 but uses the ECR container image instead of a zip package. Save the Function URL.
+
+**Verify:**
+```bash
+aws lambda invoke --function-name lsc-knn-container \
+    --payload '{"body": "{\"query\": [0.1, 0.2, 0.3]}"}' /tmp/out.json
+cat /tmp/out.json
+```
 
 ---
 
@@ -296,31 +354,68 @@ source loadtest/endpoints.sh
 bash loadtest/scenario-a.sh "$LAMBDA_ZIP_URL" "$LAMBDA_CONTAINER_URL"
 ```
 
-Or use the Python load tester for Lambda:
+On Academy accounts, Lambda Function URLs require IAM auth, so use the Python load tester instead of curl/hey:
+
 ```bash
+# Lambda Zip — 30 sequential requests, 1s apart
 python3 loadtest/lambda_loadtest.py "$LAMBDA_ZIP_URL/search" \
     -n 30 --sequential-delay 1.0 --query-file loadtest/query.json \
     --output results/scenario-a-zip.json --label "Scenario A: Zip"
+
+# Lambda Container — wait 20 min idle again, then:
+python3 loadtest/lambda_loadtest.py "$LAMBDA_CONTAINER_URL/search" \
+    -n 30 --sequential-delay 1.0 --query-file loadtest/query.json \
+    --output results/scenario-a-container.json --label "Scenario A: Container"
 ```
 
 After running, check CloudWatch Logs for REPORT lines with Init Duration:
 ```bash
+# Zip cold starts
 aws logs filter-log-events \
     --log-group-name "/aws/lambda/lsc-knn-zip" \
     --filter-pattern "Init Duration" \
     --start-time $(date -d '30 minutes ago' +%s000) \
     --query 'events[*].message' --output text
+
+# Container cold starts
+aws logs filter-log-events \
+    --log-group-name "/aws/lambda/lsc-knn-container" \
+    --filter-pattern "Init Duration" \
+    --start-time $(date -d '30 minutes ago' +%s000) \
+    --query 'events[*].message' --output text
 ```
+
+> **Tip:** The filter `"Init Duration"` only matches REPORT lines where a cold start occurred. To see all invocations (warm + cold), filter for `"REPORT"` instead.
+
+> **Tip:** If you get `ResourceNotFoundException`, the log group hasn't been created yet (Lambda creates it on first invocation). List existing log groups with:
+> ```bash
+> aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/lsc-knn" \
+>     --query 'logGroups[*].logGroupName' --output text
+> ```
 
 ### Scenario B — Warm Throughput
 
+First warm up all endpoints with a few requests, then run the tests.
+
+**Fargate & EC2** (no auth needed — use `hey` via the scenario script):
 ```bash
 source loadtest/endpoints.sh
-bash loadtest/scenario-b.sh "$LAMBDA_ZIP_URL" "$LAMBDA_CONTAINER_URL" "$FARGATE_URL" "$EC2_URL"
+
+# hey: 500 requests at concurrency 10 and 50
+hey -n 500 -c 10 -m POST -H "Content-Type: application/json" \
+    -D loadtest/query.json "$FARGATE_URL/search"
+hey -n 500 -c 50 -m POST -H "Content-Type: application/json" \
+    -D loadtest/query.json "$FARGATE_URL/search"
+
+hey -n 500 -c 10 -m POST -H "Content-Type: application/json" \
+    -D loadtest/query.json "$EC2_URL/search"
+hey -n 500 -c 50 -m POST -H "Content-Type: application/json" \
+    -D loadtest/query.json "$EC2_URL/search"
 ```
 
-For Lambda (if using IAM auth), use the Python load tester:
+**Lambda** (IAM auth — use the Python load tester):
 ```bash
+# Lambda Zip — concurrency 10 and 50
 python3 loadtest/lambda_loadtest.py "$LAMBDA_ZIP_URL/search" \
     -n 500 -c 10 --query-file loadtest/query.json \
     --output results/scenario-b-lambda-zip-c10.json
@@ -328,6 +423,15 @@ python3 loadtest/lambda_loadtest.py "$LAMBDA_ZIP_URL/search" \
 python3 loadtest/lambda_loadtest.py "$LAMBDA_ZIP_URL/search" \
     -n 500 -c 50 --query-file loadtest/query.json \
     --output results/scenario-b-lambda-zip-c50.json
+
+# Lambda Container — concurrency 10 and 50
+python3 loadtest/lambda_loadtest.py "$LAMBDA_CONTAINER_URL/search" \
+    -n 500 -c 10 --query-file loadtest/query.json \
+    --output results/scenario-b-lambda-container-c10.json
+
+python3 loadtest/lambda_loadtest.py "$LAMBDA_CONTAINER_URL/search" \
+    -n 500 -c 50 --query-file loadtest/query.json \
+    --output results/scenario-b-lambda-container-c50.json
 ```
 
 ### Scenario C — Cost Analysis
@@ -336,10 +440,28 @@ No commands needed. See Assignment 4 in the Student Guide.
 
 ### Scenario D — Burst from Zero (requires 20-min idle)
 
+Ensure Lambda has been idle 20+ minutes, then send 200 requests at concurrency 50 to all targets.
+
+**Fargate & EC2:**
 ```bash
-# Ensure Lambda has been idle 20+ minutes
 source loadtest/endpoints.sh
-bash loadtest/scenario-d.sh "$LAMBDA_ZIP_URL" "$LAMBDA_CONTAINER_URL" "$FARGATE_URL" "$EC2_URL"
+
+hey -n 200 -c 50 -m POST -H "Content-Type: application/json" \
+    -D loadtest/query.json "$FARGATE_URL/search"
+
+hey -n 200 -c 50 -m POST -H "Content-Type: application/json" \
+    -D loadtest/query.json "$EC2_URL/search"
+```
+
+**Lambda:**
+```bash
+python3 loadtest/lambda_loadtest.py "$LAMBDA_ZIP_URL/search" \
+    -n 200 -c 50 --query-file loadtest/query.json \
+    --output results/scenario-d-lambda-zip.json --label "Scenario D: Zip Burst"
+
+python3 loadtest/lambda_loadtest.py "$LAMBDA_CONTAINER_URL/search" \
+    -n 200 -c 50 --query-file loadtest/query.json \
+    --output results/scenario-d-lambda-container.json --label "Scenario D: Container Burst"
 ```
 
 ---

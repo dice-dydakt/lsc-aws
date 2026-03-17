@@ -49,5 +49,6 @@ def lambda_handler(event, context):
             "results": results,
             "query_time_ms": round(elapsed_ms, 3),
             "instance_id": INSTANCE_ID,
+            "cold_start": is_cold,
         }),
     }
