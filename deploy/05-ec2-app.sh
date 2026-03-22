@@ -41,21 +41,18 @@ AMI_ID=$(aws ec2 describe-images \
     --output text --region "$AWS_REGION")
 echo "AMI: ${AMI_ID}"
 
-# --- Check for existing instance profile ---
+# --- Use pre-created LabInstanceProfile ---
+# AWS Academy Learner Lab pre-creates LabInstanceProfile with LabRole attached.
+# Do NOT attempt to create instance profiles — IAM is extremely limited in Learner Lab.
 echo "Checking for LabInstanceProfile..."
-INSTANCE_PROFILE_NAME=""
 if aws iam get-instance-profile --instance-profile-name LabInstanceProfile &>/dev/null; then
     INSTANCE_PROFILE_NAME="LabInstanceProfile"
-elif aws iam get-instance-profile --instance-profile-name EMR_EC2_DefaultRole &>/dev/null; then
-    INSTANCE_PROFILE_NAME="EMR_EC2_DefaultRole"
 else
-    echo "WARNING: No instance profile found. Will try to create one."
-    aws iam create-instance-profile --instance-profile-name LabInstanceProfile 2>/dev/null || true
-    aws iam add-role-to-instance-profile \
-        --instance-profile-name LabInstanceProfile \
-        --role-name LabRole 2>/dev/null || true
-    INSTANCE_PROFILE_NAME="LabInstanceProfile"
-    sleep 10  # Wait for instance profile to propagate
+    echo "ERROR: LabInstanceProfile not found. This is pre-created by AWS Academy."
+    echo "If you are not using AWS Academy, create it manually:"
+    echo "  aws iam create-instance-profile --instance-profile-name LabInstanceProfile"
+    echo "  aws iam add-role-to-instance-profile --instance-profile-name LabInstanceProfile --role-name LabRole"
+    exit 1
 fi
 echo "Instance Profile: ${INSTANCE_PROFILE_NAME}"
 

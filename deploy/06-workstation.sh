@@ -5,15 +5,24 @@ source "$(dirname "$0")/00-config.sh"
 echo "=== Step 6: EC2 Workstation (t3.small) ==="
 
 # --- Key Pair ---
-if ! aws ec2 describe-key-pairs --key-names "$KEY_NAME" --region "$AWS_REGION" &>/dev/null; then
-    echo "Creating key pair: ${KEY_NAME}"
-    aws ec2 create-key-pair \
-        --key-name "$KEY_NAME" \
-        --query 'KeyMaterial' --output text \
-        --region "$AWS_REGION" > "$KEY_FILE"
-    chmod 600 "$KEY_FILE"
+# AWS Academy Learner Lab pre-creates the 'vockey' key pair in us-east-1.
+# Use it instead of creating a new one. Download the PEM from "AWS Details" in the lab console.
+VOCKEY_NAME="vockey"
+if aws ec2 describe-key-pairs --key-names "$VOCKEY_NAME" --region "$AWS_REGION" &>/dev/null; then
+    echo "Using pre-created key pair: ${VOCKEY_NAME}"
+    echo "NOTE: Download the PEM file from 'AWS Details' in the Learner Lab console."
+    echo "  Save it as ~/.ssh/labsuser.pem and run: chmod 600 ~/.ssh/labsuser.pem"
+    KEY_NAME="$VOCKEY_NAME"
+    KEY_FILE="${HOME}/.ssh/labsuser.pem"
 else
-    echo "Key pair already exists: ${KEY_NAME}"
+    echo "WARNING: 'vockey' key pair not found. Creating custom key pair: ${KEY_NAME}"
+    if ! aws ec2 describe-key-pairs --key-names "$KEY_NAME" --region "$AWS_REGION" &>/dev/null; then
+        aws ec2 create-key-pair \
+            --key-name "$KEY_NAME" \
+            --query 'KeyMaterial' --output text \
+            --region "$AWS_REGION" > "$KEY_FILE"
+        chmod 600 "$KEY_FILE"
+    fi
 fi
 
 # --- Get default VPC ---
@@ -79,10 +88,12 @@ if [ "$EXISTING_ID" != "None" ] && [ -n "$EXISTING_ID" ]; then
     echo "Instance already running: ${EXISTING_ID}"
     INSTANCE_ID="$EXISTING_ID"
 else
-    # Check for instance profile
+    # Use pre-created LabInstanceProfile (do NOT attempt to create — IAM is restricted)
     INSTANCE_PROFILE_NAME=""
     if aws iam get-instance-profile --instance-profile-name LabInstanceProfile &>/dev/null; then
         INSTANCE_PROFILE_NAME="LabInstanceProfile"
+    else
+        echo "WARNING: LabInstanceProfile not found. Workstation will not have AWS CLI access."
     fi
 
     echo "Launching workstation..."

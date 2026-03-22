@@ -69,23 +69,29 @@ Deploy the four targets (Lambda zip, Lambda container, Fargate, EC2) following t
 **Goal:** Measure per-request latency at sustained load across all four environments.
 
 **What to do:**
-1. Warm up all endpoints (the scenario script sends 60 requests at c=50 to provision enough Lambda environments for the highest concurrency test).
-2. For each target, run 500 requests at concurrency=10. Record p50, p95, p99.
-3. Repeat at concurrency=50.
+1. Warm up all endpoints (the scenario script sends warm-up requests to provision Lambda environments and prime Fargate/EC2).
+2. For Lambda targets, run 500 requests at concurrency=5, then at concurrency=10. Record p50, p95, p99.
+3. For Fargate and EC2 targets, run 500 requests at concurrency=10, then at concurrency=50. Record p50, p95, p99.
 4. Record server-side `query_time_ms` from the response body. For Fargate/EC2, sample with `curl`; for Lambda (IAM-auth), use `aws lambda invoke` or extract from CloudWatch application logs.
+
+> **AWS Academy constraint:** Lambda concurrency is capped at 10 because the Learner Lab allows a maximum of 10 concurrent Lambda execution environments. Exceeding this limit may result in account deactivation. Fargate and EC2 have no such limit.
 
 **What to record:** A table like this:
 
 | Environment | Concurrency | p50 (ms) | p95 (ms) | p99 (ms) | Server avg (ms) |
 |---|---|---|---|---|---|
+| Lambda (zip) | 5 | | | | |
 | Lambda (zip) | 10 | | | | |
-| Lambda (zip) | 50 | | | | |
+| Lambda (container) | 5 | | | | |
 | Lambda (container) | 10 | | | | |
-| ... | ... | | | | |
+| Fargate | 10 | | | | |
+| Fargate | 50 | | | | |
+| EC2 | 10 | | | | |
+| EC2 | 50 | | | | |
 
 **Analysis:**
 - Annotate any cell where p99 > 2× p95 (this signals tail latency instability).
-- Explain why Lambda p50 barely changes between c=10 and c=50, while Fargate/EC2 p50 increases significantly.
+- Explain why Lambda p50 barely changes between c=5 and c=10 (each request gets its own execution environment), while Fargate/EC2 p50 increases significantly between c=10 and c=50 (requests queue on a single task/instance).
 - Explain what causes the latency difference between server-side `query_time_ms` and client-side p50.
 
 ---
@@ -96,9 +102,11 @@ Deploy the four targets (Lambda zip, Lambda container, Fargate, EC2) following t
 
 **What to do:**
 1. Let Lambda idle for 20 minutes.
-2. Simultaneously send 200 requests at concurrency=50 to all four targets.
+2. Simultaneously send 200 requests to all four targets: Lambda at concurrency=10 (Academy limit), Fargate/EC2 at concurrency=50.
 3. Record p50, p95, p99, and maximum latency.
 4. Check CloudWatch Logs for cold-start `Init Duration` entries during the burst window.
+
+> **AWS Academy constraint:** Lambda concurrency is capped at 10 (max 10 concurrent execution environments). This still triggers cold starts since all environments will have been reclaimed after the idle period.
 
 **What to record:** Latency distribution for each target, with cold start count for Lambda.
 
@@ -208,7 +216,10 @@ results/report.md                   # Report (max 4 pages equivalent) covering a
 
 ## Important Reminders
 
-1. **Clean up when done.** Run `deploy/99-cleanup.sh` as good practice. In AWS Academy, resources are automatically terminated when your session expires, so a forgotten instance won't cost you credits.
+1. **Clean up when done.** Run `deploy/99-cleanup.sh` before ending your session. EC2 instances are automatically **restarted** when you start a new session, which drains your budget. Terminate instances you no longer need.
 2. **AWS Academy sessions expire after ~4 hours.** Note resource IDs and endpoint URLs before the session expires.
-3. **Do not use API Gateway** in front of Lambda — it adds 5–15ms overhead and invalidates the comparison.
-4. **Document your region.** All resources should be in `us-east-1` unless your Academy account restricts this.
+3. **Do not exceed Lambda concurrency limits.** AWS Academy allows a maximum of 10 concurrent Lambda execution environments. The load test scripts enforce this. **Do not** manually run load tests with concurrency higher than 10 against Lambda — exceeding service limits may result in immediate account deactivation.
+4. **Do not modify IAM roles or create instance profiles.** Use the pre-created `LabRole` and `LabInstanceProfile`. IAM is extremely restricted in Learner Lab.
+5. **Do not use API Gateway** in front of Lambda — it adds 5–15ms overhead and invalidates the comparison.
+6. **Use the `vockey` key pair** for SSH access to EC2 instances in us-east-1. Download the PEM from "AWS Details" in the Learner Lab console.
+7. **Document your region.** All resources should be in `us-east-1` unless your Academy account restricts this.

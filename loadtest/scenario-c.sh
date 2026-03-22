@@ -18,15 +18,21 @@ source "$(dirname "$0")/oha-helpers.sh"
 
 echo "=== Scenario C: Burst from Zero ==="
 echo "Ensure Lambda has been idle for 20+ minutes."
-echo "Launching 200 requests at concurrency=50 to ALL targets simultaneously..."
+echo ""
+echo "NOTE: Lambda concurrency is capped at 10 (AWS Academy limit: max 10 concurrent"
+echo "Lambda execution environments). Fargate/EC2 use c=50."
+echo ""
+echo "Launching burst to ALL targets simultaneously..."
 echo ""
 
-oha_lambda -n 200 -c 50 \
+# Lambda: 200 requests at c=10 (Academy limit: max 10 concurrent environments)
+oha_lambda -n 200 -c 10 \
     "${LAMBDA_ZIP_URL}/search" 2>&1 | tee "${RESULTS_DIR}/scenario-c-lambda-zip.txt" &
 
-oha_lambda -n 200 -c 50 \
+oha_lambda -n 200 -c 10 \
     "${LAMBDA_CONTAINER_URL}/search" 2>&1 | tee "${RESULTS_DIR}/scenario-c-lambda-container.txt" &
 
+# Fargate/EC2: 200 requests at c=50 (no concurrency limit)
 oha_http -n 200 -c 50 \
     "${FARGATE_URL}/search" 2>&1 | tee "${RESULTS_DIR}/scenario-c-fargate.txt" &
 

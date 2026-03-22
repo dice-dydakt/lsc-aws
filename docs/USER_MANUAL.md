@@ -35,14 +35,22 @@ If you don't have Docker on your laptop (or want in-region measurements with low
 bash deploy/06-workstation.sh
 ```
 
-This launches a **t3.small** (2 vCPU, 2 GB) with 20 GB storage, creates an SSH key pair, and installs Docker, git, pip, jq, and oha via user-data. It automatically detects the git remote URL of the repository you're running the script from and clones that same repo on the workstation — so if you run it from your GitHub Classroom fork, the workstation gets your fork. Wait ~2 minutes after launch, then SSH in:
+This launches a **t3.small** (2 vCPU, 2 GB) with 20 GB storage, installs Docker, git, pip, jq, and oha via user-data, and clones your repo. It automatically detects the git remote URL from the machine running the script — so if you run it from your GitHub Classroom fork, the workstation gets your fork.
+
+The script uses the pre-created **`vockey`** key pair (available in us-east-1). Download the PEM file from **AWS Details** in the Learner Lab console, save it as `~/.ssh/labsuser.pem`, and set permissions:
 
 ```bash
-ssh -i deploy/lsc-knn-key.pem ec2-user@<WORKSTATION_IP>
+chmod 600 ~/.ssh/labsuser.pem
+```
+
+Wait ~2 minutes after launch, then SSH in:
+
+```bash
+ssh -i ~/.ssh/labsuser.pem ec2-user@<WORKSTATION_IP>
 cd <your-repo-name>
 ```
 
-If a **LabInstanceProfile** exists, it is attached automatically — no credential files needed. Verify with:
+The pre-created **LabInstanceProfile** is attached automatically — no credential files needed. Verify with:
 ```bash
 aws sts get-caller-identity
 ```
@@ -150,7 +158,8 @@ bash deploy/01-ecr.sh
 
 **Verify:**
 ```bash
-aws ecr describe-images --repository-name lsc-knn-app --query 'imageDetails[0].imageTags'
+aws ecr describe-images --repository-name lsc-knn-app \
+    --image-ids imageTag=latest --query 'imageDetails[0].imageTags'
 # Expected: ["latest"]
 ```
 
@@ -252,7 +261,7 @@ bash deploy/05-ec2-app.sh
 **What it does:**
 1. Creates a security group allowing port 8080 and SSH (port 22)
 2. Finds the latest Amazon Linux 2023 AMI
-3. Checks for/creates an instance profile with LabRole
+3. Uses the pre-created **LabInstanceProfile** (with LabRole attached)
 4. Launches a t3.small with a user-data script that installs Docker, pulls the image from ECR, and starts the container
 
 **The script outputs the public IP.** Wait ~2 minutes for user-data to complete.
@@ -271,11 +280,7 @@ curl -X POST -H "Content-Type: application/json" -d @loadtest/query.json \
   sudo docker logs knn-app  # check for errors
   cloud-init status      # should show "done"
   ```
-- "No instance profile" → create one manually in the IAM console or run:
-  ```bash
-  aws iam create-instance-profile --instance-profile-name LabInstanceProfile
-  aws iam add-role-to-instance-profile --instance-profile-name LabInstanceProfile --role-name LabRole
-  ```
+- "LabInstanceProfile not found" → this should be pre-created by AWS Academy. If you are not using Academy, create it manually in the IAM console.
 
 ---
 
@@ -368,7 +373,9 @@ source loadtest/endpoints.sh
 bash loadtest/scenario-b.sh "$LAMBDA_ZIP_URL" "$LAMBDA_CONTAINER_URL" "$FARGATE_URL" "$EC2_URL"
 ```
 
-The script warms up all targets, then runs 500 requests at concurrency 10 and 50 for each. Results are saved to `results/scenario-b-*.txt`.
+The script warms up all targets, then runs 500 requests at two concurrency levels: Lambda at c=5 and c=10 (Academy limit), Fargate/EC2 at c=10 and c=50. Results are saved to `results/scenario-b-*.txt`.
+
+> **AWS Academy constraint:** Lambda concurrency is capped at 10 (max 10 concurrent execution environments). Do not manually run load tests with higher concurrency against Lambda — exceeding service limits may result in account deactivation.
 
 ### Scenario C — Burst from Zero (requires 20-min Lambda idle)
 
@@ -378,7 +385,7 @@ source loadtest/endpoints.sh
 bash loadtest/scenario-c.sh "$LAMBDA_ZIP_URL" "$LAMBDA_CONTAINER_URL" "$FARGATE_URL" "$EC2_URL"
 ```
 
-The script fires 200 requests at concurrency 50 to all four targets simultaneously. Results are saved to `results/scenario-c-*.txt`.
+The script fires 200 requests to all four targets simultaneously: Lambda at c=10 (Academy limit), Fargate/EC2 at c=50. Results are saved to `results/scenario-c-*.txt`.
 
 ---
 

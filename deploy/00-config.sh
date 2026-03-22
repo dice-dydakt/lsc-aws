@@ -34,6 +34,7 @@ export TG_NAME=lsc-knn-tg
 # EC2
 export APP_SG_NAME=lsc-knn-app-sg
 export WS_SG_NAME=lsc-knn-ws-sg
+# KEY_NAME defaults to 'vockey' (pre-created by Learner Lab); overridden in 06-workstation.sh
 export KEY_NAME=lsc-knn-key
 
 # Paths
